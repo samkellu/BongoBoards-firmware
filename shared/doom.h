@@ -49,7 +49,7 @@
 // MAP GEN
 #define WALL_OFFSET           27
 #define MIN_ROOM_WIDTH        20
-#define MAP_GEN_REC_DEPTH     5
+#define MAP_GEN_REC_DEPTH     7
 #define MAP_WIDTH             500
 #define MAP_HEIGHT            500
 #define DOOR_WIDTH            20
@@ -94,7 +94,7 @@ typedef struct sprite {
   const uint8_t height;
 } sprite;
 
-#define NUM_ENEMIES 3
+#define NUM_ENEMIES 2
 typedef struct enemy {
   vec2 pos;
   int health;

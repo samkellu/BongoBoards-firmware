@@ -145,12 +145,12 @@ bool collision_detection(vec2 v, bool is_enemy) {
 
     if (is_enemy) return false;
 
-    // for (int i = 0; i < NUM_ENEMIES; i++) {
-    //     enemy e = enemies[i];
-    //     collision_dist2 = e.width * e.width;
-    //     float d2 = dist2(v, e.pos);
-    //     if (d2 < collision_dist2) return true;
-    // }
+    for (int i = 0; i < NUM_ENEMIES; i++) {
+        enemy e = enemies[i];
+        collision_dist2 = e.width * e.width;
+        float d2 = dist2(v, e.pos);
+        if (d2 < collision_dist2) return true;
+    }
 
     return false;
 }
@@ -170,25 +170,25 @@ segment* bsp_wallgen(segment* walls, int* num_walls, int l, int r, int t, int b,
         walls[(*num_walls)++] = (segment) {
             {l + MIN_ROOM_WIDTH, b - MIN_ROOM_WIDTH},
             {l + MIN_ROOM_WIDTH, t + MIN_ROOM_WIDTH},
-            LINES
+            CHECK
         };
 
         walls[(*num_walls)++] = (segment) {
             {l + MIN_ROOM_WIDTH, t + MIN_ROOM_WIDTH},
             {r - MIN_ROOM_WIDTH, t + MIN_ROOM_WIDTH},
-            LINES
+            CHECK
         };
 
         walls[(*num_walls)++] = (segment) {
             {r - MIN_ROOM_WIDTH, t + MIN_ROOM_WIDTH},
             {r - MIN_ROOM_WIDTH, b - MIN_ROOM_WIDTH},
-            LINES
+            CHECK
         };
 
         walls[(*num_walls)++] = (segment) {
             {r - MIN_ROOM_WIDTH, b - MIN_ROOM_WIDTH},
             {l + MIN_ROOM_WIDTH, b - MIN_ROOM_WIDTH},
-            LINES
+            CHECK
         };
 
         return walls;
@@ -578,10 +578,9 @@ void render_map(vec2 p, float pa, bool is_shooting) {
                     info.phase = (wall2pt + 1) % 20 < 3;
                     vertical_line(i, info.length, 1, MAX(1, info.length - 1));
 
-                    // if (info.phase) {
-                    //     vertical_line(i, info.length, 1, 1);
-                    // } else 
-                    if (wall2pt < 2 || wall2pt > wall_len - 2) {
+                    if (info.phase) {
+                        vertical_line(i, info.length, 1, 1);
+                    } else if (wall2pt < 2 || wall2pt > wall_len - 2) {
                         vertical_line(i, info.length, 1, 1);
                     }
                     
@@ -634,6 +633,7 @@ void render_map(vec2 p, float pa, bool is_shooting) {
         if (!draw) continue;
 
         int enemy_screen_y = WALL_OFFSET - scale_height / 3;
+        printf("scr y %d\n", enemy_screen_y);
         if (is_shooting && enemy_angle >= -FOV_RADS / 8 && enemy_angle < FOV_RADS / 8) {
             oled_write_bmp_P_scaled(e.s_hurt[e.anim_state], scale_height, scale_width, enemy_screen_x - scale_width / 2, enemy_screen_y);
             if (--enemies[i].health < 0) {
@@ -641,7 +641,6 @@ void render_map(vec2 p, float pa, bool is_shooting) {
                 score++;
             }
         } else {
-            printf("anim %d\n", e.anim_state);
             oled_write_bmp_P_scaled(e.s[e.anim_state], scale_height, scale_width, enemy_screen_x - scale_width / 2, enemy_screen_y);
         }
 
@@ -672,8 +671,8 @@ void draw_gun(bool moving, bool show_flash) {
     // Walking animation
     if (moving) {
         gun_anim_state = (gun_anim_state + 5) % 7200;
-        gun_x = GUN_X + 6 * sin((float) gun_anim_state * 0.03);
-        gun_y = GUN_Y + 3 + 3 * cos((float) (gun_anim_state + 90) * 0.06);
+        gun_x = GUN_X + 6 * sin((float) gun_anim_state * 0.06);
+        gun_y = GUN_Y + 3 + 3 * cos((float) (gun_anim_state + 90) * 0.12);
     
     // Slowly move gun back to centre when not moving
     } else {
@@ -1032,11 +1031,8 @@ void doom_update(controls c) {
         if (!collision_detection(pny, false)) p.y = pny.y;
     }
     
-    bool anim_state = timer_elapsed32(game_time) % 2000 < 1000 ? 0 : 1;
-    for (int i = 0; i < NUM_ENEMIES; i++) {
-        enemies[i].anim_state = anim_state;
-    }
-
+    enemies[0].anim_state = time_elapsed % 2000 < 1000 ? 0 : 1;
+    enemies[1].anim_state = enemies[0].anim_state;
     if (time_elapsed % 200 < 100)
         enemy_update();
 
@@ -1057,9 +1053,9 @@ void doom_update(controls c) {
     #endif
     
     // Displays the current game time
-    oled_set_cursor(1, 7);
+    oled_set_cursor(0, 7);
     oled_write_P(PSTR("TIME: "), false);
-    oled_write(get_u32_str((time_elapsed - START_TIME_MILLI) / 1000, ' '), false);
+    oled_write(get_u16_str((timer_elapsed(game_time) - START_TIME_MILLI) / 1000, ' '), false);
     
     // Displays the players current score
     oled_set_cursor(12, 7);
@@ -1071,8 +1067,8 @@ void doom_update(controls c) {
     oled_set_cursor(0, 0);
     oled_write("FPS:", false);
     oled_write(get_u16_str(fpms, ' '), false);
-    oled_write("num raycast calls:", false);
-    oled_write(get_u16_str(raycast_calls, ' '), false);
+    // oled_write("num raycast calls:", false);
+    // oled_write(get_u16_str(raycast_calls, ' '), false);
 
     last_frame = timer_read();
 }
