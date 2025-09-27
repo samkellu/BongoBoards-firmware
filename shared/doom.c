@@ -671,8 +671,8 @@ void draw_gun(bool moving, bool show_flash) {
     // Walking animation
     if (moving) {
         gun_anim_state = (gun_anim_state + 5) % 7200;
-        gun_x = GUN_X + 6 * sin((float) gun_anim_state * 0.03);
-        gun_y = GUN_Y + 3 + 3 * cos((float) (gun_anim_state + 90) * 0.06);
+        gun_x = GUN_X + 6 * sin((float) gun_anim_state * 0.06);
+        gun_y = GUN_Y + 3 + 3 * cos((float) (gun_anim_state + 90) * 0.12);
     
     // Slowly move gun back to centre when not moving
     } else {
@@ -1053,9 +1053,9 @@ void doom_update(controls c) {
     #endif
     
     // Displays the current game time
-    oled_set_cursor(1, 7);
+    oled_set_cursor(0, 7);
     oled_write_P(PSTR("TIME: "), false);
-    oled_write(get_u32_str((time_elapsed - START_TIME_MILLI) / 1000, ' '), false);
+    oled_write(get_u16_str((timer_elapsed(game_time) - START_TIME_MILLI) / 1000, ' '), false);
     
     // Displays the players current score
     oled_set_cursor(12, 7);
@@ -1067,8 +1067,8 @@ void doom_update(controls c) {
     oled_set_cursor(0, 0);
     oled_write("FPS:", false);
     oled_write(get_u16_str(fpms, ' '), false);
-    oled_write("num raycast calls:", false);
-    oled_write(get_u16_str(raycast_calls, ' '), false);
+    // oled_write("num raycast calls:", false);
+    // oled_write(get_u16_str(raycast_calls, ' '), false);
 
     last_frame = timer_read();
 }
