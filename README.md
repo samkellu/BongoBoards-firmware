@@ -32,3 +32,13 @@ An 80% TKL layout using a KBDFans tiger lite chassis, but handwired with an OLED
 <br>
 
 ![Bongo80](https://i.imgur.com/bL6ZGjVh.jpg?1)
+
+<h2>QMK</h2>
+This project relies on the underlying framework provided by the QMK project, and will be contributed there once I am happy with the DOOM minigame. The intention is to have the two OLED "Apps" as standalone components that can be included in anyones firmware (granted they have a supported screen).
+
+<br>
+
+Currently the DOOM minigame can be emulated for development within a basic SDL rewrite of the QMK OLED driver, which can be built using the included makefile.
+
+<img src="readme/emulator.gif" width="100%">
+
