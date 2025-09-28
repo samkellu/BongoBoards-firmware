@@ -38,8 +38,11 @@ static int gun_anim_state = 0;
 static segment* walls = NULL;
 static int num_walls = 0;
 
-static int raycast_calls = 0;
 static enemy enemies[NUM_ENEMIES];
+
+#ifdef RENDER_DEBUG
+    static int raycast_calls = 0;
+#endif
 
 // =================== MATH =================== //
 
@@ -85,7 +88,10 @@ float point_ray_dist2(vec2 p, segment s) {
 // Returns the distance along the ray at which the intersection occurs
 float raycast(vec2 ray_origin, vec2 ray_direction, segment s, bool* hit) {
 
-    raycast_calls++;
+    #ifdef RENDER_DEBUG
+        raycast_calls++;
+    #endif
+
     if (hit) *hit = false;
 
     ray_direction = norm(ray_direction);
@@ -225,65 +231,10 @@ segment* bsp_wallgen(segment* walls, int* num_walls, int l, int r, int t, int b,
 }
 
 
-// =================== BUFFER =================== //
-
-// 128px wide display only!
-// void write_pixel(int x, int y, bool white)
-// {
-//     if (x < 0 || x >= SCREEN_WIDTH) return;
-//     if (y < 0 || y >= UI_HEIGHT) return;
-
-//     int byte = (x + y * SCREEN_WIDTH) >> 3; // y / 8
-//     int bit = (x + y * SCREEN_WIDTH) & 0x07; // y % 8
-
-//     if (white) {
-//         frame_buffer[byte] |= 1 << bit;
-//     } else {
-//         frame_buffer[byte] &= ~(1 << bit);
-//     }
-// }
-
-// void clear_frame_buffer() {
-//     memset(frame_buffer, 0, FRAME_BUFFER_LENGTH);
-// }
-
-// void render_frame_buffer() {
-
-//     oled_set_cursor(0, 0);
-//     oled_write_raw((const char*) frame_buffer, sizeof(frame_buffer));
-    // int row = 0, col = 0;
-    // for (int i = 0; i < FRAME_BUFFER_LENGTH; i++) {
-    //     uint8_t c = frame_buffer[i];
-    //     for (int j = 0; j < 8; j++) {
-    //         bool px = c & (1 << j);
-    //         oled_oled_write_pixel(col, row, px);
-    //         if (++col == SCREEN_WIDTH) {
-    //             row++;
-    //             col = 0;
-    //         }
-    //     }
-    // }
-
-//     clear_frame_buffer();
-// }
-
-// void print_frame_buffer() {
-//     int idx = 0;
-//     for (int y = 0; y < UI_HEIGHT; y++)
-//     {
-//         for (int x = 0; x < SCREEN_WIDTH; x++)
-//         {
-//             int val = frame_buffer[idx / sizeof(char)] & 1 << (idx % sizeof(char));
-//             printf("%d", val);
-//             idx++;
-//         }
-//         printf("\n");
-//     }
-// }
-
-
 // =================== GRAPHICS =================== //
 
+
+#ifdef RENDER_DEBUG
 
 void print_dll(dll* root) {
     dll* debug_curs = root;
@@ -302,6 +253,8 @@ void print_dll(dll* root) {
     
     printf("\n\n");
 }
+
+#endif
 
 dll* merge_sort_dll(dll* root) {
 
@@ -348,8 +301,13 @@ dll* merge_sort_dll(dll* root) {
 // 2.5D raycast renderer for the map and entities around the player
 void render_map(vec2 p, float pa, bool is_shooting) {
 
-    // printf("\n\n=================== BEGIN FRAME ======================\n\n");
-    raycast_calls = 0;
+    #ifdef DS_DEBUG
+        printf("\n\n=================== BEGIN FRAME ======================\n\n");
+    #endif
+
+    #ifdef RENDER_DEBUG
+        raycast_calls = 0;
+    #endif
 
     segment cone_l = {p, {0, 0}};
     float bound_angle = pa - FOV_RADS / 2;
@@ -450,7 +408,9 @@ void render_map(vec2 p, float pa, bool is_shooting) {
     dll* sweep_curs = root;
     segment* closest_wall = NULL;
 
-    // print_dll(root);
+    #ifdef DS_DEBUG
+        print_dll(root);
+    #endif
 
     // Skips every second raycast on walls for performance
     for (int i = 0; i < SCREEN_WIDTH; i += 2) {
@@ -614,7 +574,6 @@ void render_map(vec2 p, float pa, bool is_shooting) {
         
         // Walk across lateral pixels affected by sprite, if any have depth more than enemy distance draw enemy.
         float enemy_dist = magnitude(e_vec);
-        printf("%f\n", enemy_dist);
         int scale_height = e.s[e.anim_state].height * 50 / enemy_dist;
         int scale_width = e.s[e.anim_state].width * 50 / enemy_dist;
         
@@ -633,7 +592,6 @@ void render_map(vec2 p, float pa, bool is_shooting) {
         if (!draw) continue;
 
         int enemy_screen_y = WALL_OFFSET - scale_height / 3;
-        printf("scr y %d\n", enemy_screen_y);
         if (is_shooting && enemy_angle >= -FOV_RADS / 8 && enemy_angle < FOV_RADS / 8) {
             oled_write_bmp_P_scaled(e.s_hurt[e.anim_state], scale_height, scale_width, enemy_screen_x - scale_width / 2, enemy_screen_y);
             if (--enemies[i].health < 0) {
@@ -890,26 +848,6 @@ void doom_setup(void) {
 
     walls = bsp_wallgen(walls, &num_walls, 0, MAP_WIDTH, 0, MAP_HEIGHT, MAP_GEN_REC_DEPTH);
 
-    // vec2 prev_avg;
-    // int original_num_walls = num_walls;
-    // for (int i = 6; i < original_num_walls; i += 4) {
-    //     segment a = walls[i];
-    //     segment b = walls[i+2];
-
-    //     vec2 avg;
-    //     avg.x = (a.u.x + a.v.x + b.u.x + b.v.x) / 4;
-    //     avg.y = (a.u.y + a.v.y + b.u.y + b.v.y) / 4;
-
-    //     if (i == 6) {
-    //         prev_avg = avg;
-    //         continue;
-    //     }
-
-    //     walls = realloc(walls, sizeof(segment) * (num_walls + 1));
-    //     walls[num_walls++] = (segment) { avg, prev_avg, CHECK };
-    //     prev_avg = avg;
-    // }
-
     // Initializes the list of possible enemy spawn locations
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemies[i] = (enemy) {get_valid_spawn(), 10, 8, 0, 0, imp_sheet, sizeof(imp_sheet), imp_hurt_sheet, sizeof(imp_hurt_sheet)};
@@ -925,6 +863,7 @@ void doom_setup(void) {
     initialized = true;
 
     #ifdef RENDER_DEBUG
+        // Use emulator to render
         render();
     #endif
 }
@@ -1047,8 +986,16 @@ void doom_update(controls c) {
     }
 
     #ifdef RENDER_DEBUG
-        last_frame = timer_read();
+        time_elapsed = timer_elapsed32(last_frame);
+        int fpms = 1000 / (float) time_elapsed;
+        oled_set_cursor(0, 0);
+        oled_write("FPS:", false);
+        oled_write(get_u16_str(fpms, ' '), false);
+        oled_write("num raycast calls:", false);
+        oled_write(get_u16_str(raycast_calls, ' '), false);
+        
         render();
+        last_frame = timer_read();
         return;
     #endif
     
@@ -1061,14 +1008,6 @@ void doom_update(controls c) {
     oled_set_cursor(12, 7);
     oled_write_P(PSTR("SCORE:"), false);
     oled_write(get_u8_str(score, ' '), false);
-    
-    time_elapsed = timer_elapsed32(last_frame);
-    int fpms = 1000 / (float) time_elapsed;
-    oled_set_cursor(0, 0);
-    oled_write("FPS:", false);
-    oled_write(get_u16_str(fpms, ' '), false);
-    // oled_write("num raycast calls:", false);
-    // oled_write(get_u16_str(raycast_calls, ' '), false);
 
     last_frame = timer_read();
 }
