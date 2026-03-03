@@ -38,7 +38,10 @@ static int gun_anim_state = 0;
 static segment* walls = NULL;
 static int num_walls = 0;
 
+// Enemy information
 static enemy enemies[NUM_ENEMIES];
+static projectile projectiles[NUM_ENEMIES];
+static int enemy_attack_cooldowns[NUM_ENEMIES];
 
 #ifdef RENDER_DEBUG
     static int raycast_calls = 0;
@@ -564,6 +567,9 @@ void render_map(vec2 p, float pa, bool is_shooting) {
         free(val);
     }
     
+    // TODO: New collection for renderable entities rather than enemies.
+    // Order by distance for proper occlusion.
+
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemy e = enemies[i];
 
@@ -766,7 +772,8 @@ void enemy_update() {
         enemy e = enemies[i];
         float player_dist2 = dist2(e.pos, p);
         if (player_dist2 > enemy_vision_range2 || player_dist2 <= 300) continue;
-
+        
+        // Move towards player if not too close
         if (abs(e.pos.y - p.y) > 1) {
             vec2 eny = {e.pos.x, e.pos.y + ENEMY_WALK_SPEED * (p.y - e.pos.y > 0 ? 1 : -1)};
             if (!collision_detection(eny, true)) enemies[i].pos.y = eny.y;
@@ -775,6 +782,13 @@ void enemy_update() {
         if (abs(e.pos.x - p.x) > 1) {
             vec2 enx = {e.pos.x + ENEMY_WALK_SPEED * (p.x - e.pos.x > 0 ? 1 : -1), e.pos.y};
             if (!collision_detection(enx, true)) enemies[i].pos.x = enx.x;
+        }
+
+        // Attack if possible
+        if (enemy_attack_time == 0)
+        {
+            enemy_attack_time = ENEMY_ATTACK_COOLDOWN;
+            projectiles[i] = (projectile) {e.pos, sub(p, e.pos), doom_logo_sprite, true};
         }
     }
 }
@@ -850,7 +864,7 @@ void doom_setup(void) {
 
     // Initializes the list of possible enemy spawn locations
     for (int i = 0; i < NUM_ENEMIES; i++) {
-        enemies[i] = (enemy) {get_valid_spawn(), 10, 8, 0, 0, imp_sheet, sizeof(imp_sheet), imp_hurt_sheet, sizeof(imp_hurt_sheet)};
+        enemies[i] = (enemy) {get_valid_spawn(), 10, 8, 0, imp_sheet, sizeof(imp_sheet), imp_hurt_sheet, sizeof(imp_hurt_sheet)};
     }
 
     // Initializes player state
@@ -952,7 +966,7 @@ void doom_update(controls c) {
     if (time_elapsed < FRAME_TIME_MILLI) return;
     
     if (shot_timer > 0) shot_timer--;
-    if (c.shoot && shot_timer == 0) shot_timer = 2;
+    if (c.shoot && shot_timer == 0) shot_timer = PLAYER_SHOT_COOLDOWN;
 
     if (c.l) {
         pa -= ROTATION_SPEED_RADS < 0 ? ROTATION_SPEED_RADS + 2 * PI : ROTATION_SPEED_RADS;
@@ -970,8 +984,14 @@ void doom_update(controls c) {
         if (!collision_detection(pny, false)) p.y = pny.y;
     }
     
-    enemies[0].anim_state = time_elapsed % 2000 < 1000 ? 0 : 1;
-    enemies[1].anim_state = enemies[0].anim_state;
+    for (int i = 0; i < NUM_ENEMIES; i++) {
+        if (i == 0) {
+            enemies[i].anim_state = time_elapsed % 2000 < 1000 ? 0 : 1;
+        } else {
+            enemies[i].anim_state = enemies[0].anim_state;
+        }
+    }
+
     if (time_elapsed % 200 < 100)
         enemy_update();
 

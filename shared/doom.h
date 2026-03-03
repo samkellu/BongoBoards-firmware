@@ -39,6 +39,9 @@
 #define ENEMY_WALK_SPEED      1
 #define ROTATION_SPEED        5
 #define WALK_SPEED            4
+#define PLAYER_SHOT_COOLDOWN  2   // frames
+#define ENEMY_SHOT_COOLDOWN   30  // frames
+#define PROJECTILE_SPEED      5
 
 // RENDERING
 #define DOV                   400.0f
@@ -60,6 +63,7 @@ static const float FOV_RADS             = FOV * PI / 180.0f;
 static const float FRAME_TIME_MILLI     = 1000 / TARGET_FPS;
 static const int GUN_X                  = SCREEN_WIDTH / 2;
 static const int GUN_Y                  = UI_HEIGHT;
+
 // Represents a place in 2D space
 typedef struct vec2 {
   float x, y;
@@ -99,13 +103,19 @@ typedef struct enemy {
   vec2 pos;
   int health;
   int width;
-  float direction;
   int anim_state;
   const sprite* s;
   int num_sprites;
   const sprite* s_hurt;
   int num_hurt_sprites;
 } enemy;
+
+typedef struct projectile {
+  vec2 pos;
+  vec2 direction;
+  const sprite* s;
+  bool active;
+} projectile;
 
 typedef struct depth_buf_info {
   float depth;
