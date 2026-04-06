@@ -18,15 +18,11 @@
 #include "math.h"
 
 // Player information
-static vec2 p;
-static float pa;
-static int shot_timer;
-static bool has_key = false;
+static player_info player;
 
 // Game management information
 static uint32_t game_time;
 static uint16_t last_frame;
-static uint8_t score;
 static bool initialized = false;
 
 // Gun animation
@@ -142,7 +138,7 @@ bool collision_detection(vec2 v, bool wall_collisions_only) {
         segment w = walls[i];
         float d2 = point_ray_dist2(v, w);
         if (d2 < collision_dist2) {
-            if (i == 0 && score >= 5) {
+            if (i == 0 && player.score >= 5) {
                 doom_setup();
             }
 
@@ -300,7 +296,7 @@ dll* merge_sort_dll(dll* root) {
 }
 
 // 2.5D raycast renderer for the map and entities around the player
-void render_map(vec2 p, float pa, bool is_shooting) {
+void render_map(bool is_shooting) {
 
     #ifdef DS_DEBUG
         printf("\n\n=================== BEGIN FRAME ======================\n\n");
@@ -310,30 +306,30 @@ void render_map(vec2 p, float pa, bool is_shooting) {
         raycast_calls = 0;
     #endif
 
-    segment cone_l = {p, {0, 0}};
-    float bound_angle = pa - FOV_RADS / 2;
-    cone_l.v.x = p.x + DOV * cosf(bound_angle);
-    cone_l.v.y = p.y + DOV * sinf(bound_angle);
+    segment cone_l = {player.pos, {0, 0}};
+    float bound_angle = player.angle - FOV_RADS / 2;
+    cone_l.v.x = player.pos.x + DOV * cosf(bound_angle);
+    cone_l.v.y = player.pos.y + DOV * sinf(bound_angle);
 
-    segment cone_r = {p, {0, 0}};
-    bound_angle = pa + FOV_RADS / 2;
-    cone_r.v.x = p.x + DOV * cosf(bound_angle);
-    cone_r.v.y = p.y + DOV * sinf(bound_angle);
+    segment cone_r = {player.pos, {0, 0}};
+    bound_angle = player.angle + FOV_RADS / 2;
+    cone_r.v.x = player.pos.x + DOV * cosf(bound_angle);
+    cone_r.v.y = player.pos.y + DOV * sinf(bound_angle);
     
     // Stores the depth at each pixel and the phase of the wall it hit for easier reconstruction
     depth_buf_info depth_buf[SCREEN_WIDTH];
-    segment ray = {p, {0, 0}};
+    segment ray = {player.pos, {0, 0}};
 
     dll* root = NULL;
     dll* curs = NULL;
 
     // bounds for the reverse of the fov cone, used for special case
-    vec2 cone_r_dir = sub(cone_r.v, p);
-    segment neg_cone_r = {p, sub(p, cone_r_dir)};
-    vec2 cone_l_dir = sub(cone_l.v, p);
-    segment neg_cone_l = {p, sub(p, cone_l_dir)};
+    vec2 cone_r_dir = sub(cone_r.v, player.pos);
+    segment neg_cone_r = {player.pos, sub(player.pos, cone_r_dir)};
+    vec2 cone_l_dir = sub(cone_l.v, player.pos);
+    segment neg_cone_l = {player.pos, sub(player.pos, cone_l_dir)};
 
-    vec2 reference_vec = {cosf(pa), sinf(pa)};
+    vec2 reference_vec = {cosf(player.angle), sinf(player.angle)};
     for (int i = 0; i < num_walls; i++) {
         segment wall = walls[i];
         bool relevant = false;
@@ -344,14 +340,14 @@ void render_map(vec2 p, float pa, bool is_shooting) {
         relevant = u_in_fov || v_in_fov;
 
         // If not check if it fully intersects the cone
-        if (!relevant) raycast(p, reference_vec, wall, &relevant);
+        if (!relevant) raycast(player.pos, reference_vec, wall, &relevant);
 
         if (!relevant) continue;
         
-        vec2 point_vec = sub(wall.u, p);
+        vec2 point_vec = sub(wall.u, player.pos);
         float theta_u = atan2f(cross(reference_vec, point_vec), dot(point_vec, reference_vec));
 
-        point_vec = sub(wall.v, p);
+        point_vec = sub(wall.v, player.pos);
         float theta_v = atan2f(cross(reference_vec, point_vec), dot(point_vec, reference_vec));
 
         // When walls have an endpoint behind the player, the incorrect endpoint may be calculated as the "start" and "end" 
@@ -360,13 +356,13 @@ void render_map(vec2 p, float pa, bool is_shooting) {
             if (u_in_fov) {
                 bool v_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.v);
                 if (v_in_neg_fov) {
-                    bool wall_intersects_side_cone = (wall.v.x - wall.u.x) * (p.y - wall.u.y) < (wall.v.y - wall.u.y) * (p.x - wall.u.x);
+                    bool wall_intersects_side_cone = (wall.v.x - wall.u.x) * (player.pos.y - wall.u.y) < (wall.v.y - wall.u.y) * (player.pos.x - wall.u.x);
                     theta_v += (wall_intersects_side_cone ? -1 : 1) * 2 * PI;
                 }
             } else {
                 bool u_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.u);
                 if (u_in_neg_fov) {
-                    bool wall_intersects_side_cone = (wall.v.x - wall.u.x) * (p.y - wall.u.y) < (wall.v.y - wall.u.y) * (p.x - wall.u.x);
+                    bool wall_intersects_side_cone = (wall.v.x - wall.u.x) * (player.pos.y - wall.u.y) < (wall.v.y - wall.u.y) * (player.pos.x - wall.u.x);
                     theta_u += (wall_intersects_side_cone ? 1 : -1) * 2 * PI;
                 }
             }
@@ -415,7 +411,7 @@ void render_map(vec2 p, float pa, bool is_shooting) {
 
     // Skips every second raycast on walls for performance
     for (int i = 0; i < SCREEN_WIDTH; i += 2) {
-        float ray_angle = pa + (i * FOV_RADS / SCREEN_WIDTH) - (FOV_RADS / 2);
+        float ray_angle = player.angle + (i * FOV_RADS / SCREEN_WIDTH) - (FOV_RADS / 2);
         
         ray.v.x = cosf(ray_angle);
         ray.v.y = sinf(ray_angle);
@@ -576,13 +572,13 @@ void render_map(vec2 p, float pa, bool is_shooting) {
         int to_add = e->projectile.active ? 2 : 1;
         objects = (render_obj*) realloc(objects, sizeof(render_obj) * (n_objects + to_add));
 
-        vec2 e_vec = sub(e->pos, p);
+        vec2 e_vec = sub(e->pos, player.pos);
         float enemy_angle = atan2f(cross(reference_vec, e_vec), dot(reference_vec, e_vec));
         if (is_shooting && enemy_angle >= -FOV_RADS / 8 && enemy_angle < FOV_RADS / 8) {
             objects[n_objects++] = (render_obj) {&e->s_hurt[e->anim_state], e->pos};
             if (--e->health < 0) {
                 reload_enemy(e);
-                score++;
+                player.score++;
             }
         } else {
             objects[n_objects++] = (render_obj) {&e->s[e->anim_state], e->pos};
@@ -596,7 +592,7 @@ void render_map(vec2 p, float pa, bool is_shooting) {
     for (int i = 0; i < n_objects; i++) {
         
         render_obj obj = objects[i];
-        vec2 to_obj = sub(obj.pos, p);
+        vec2 to_obj = sub(obj.pos, player.pos);
         float obj_angle = atan2f(cross(reference_vec, to_obj), dot(reference_vec, to_obj));
 
         if (obj_angle < -FOV_RADS / 2 || obj_angle > FOV_RADS / 2) continue;
@@ -778,7 +774,7 @@ void reload_enemy(enemy* e) {
     e->health = 10;
     while (1) {
         e->pos = get_valid_spawn();
-        if (dist2(e->pos, p) > e->width * e->width) return;
+        if (dist2(e->pos, player.pos) > e->width * e->width) return;
     }
 }
 
@@ -787,17 +783,17 @@ void enemy_update() {
     int enemy_vision_range2 = ENEMY_VISION_RANGE * ENEMY_VISION_RANGE;
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemy* e = &enemies[i];
-        float player_dist2 = dist2(e->pos, p);
+        float player_dist2 = dist2(e->pos, player.pos);
         if (player_dist2 > enemy_vision_range2 || player_dist2 <= ENEMY_VIEW_DISTANCE) continue;
 
         // Move towards player if not too close
-        if (abs(e->pos.y - p.y) > 1) {
-            vec2 eny = {e->pos.x, e->pos.y + ENEMY_WALK_SPEED * (p.y - e->pos.y > 0 ? 1 : -1)};
+        if (abs(e->pos.y - player.pos.y) > 1) {
+            vec2 eny = {e->pos.x, e->pos.y + ENEMY_WALK_SPEED * (player.pos.y - e->pos.y > 0 ? 1 : -1)};
             if (!collision_detection(eny, true)) e->pos.y = eny.y;
         }
 
-        if (abs(e->pos.x - p.x) > 1) {
-            vec2 enx = {e->pos.x + ENEMY_WALK_SPEED * (p.x - e->pos.x > 0 ? 1 : -1), e->pos.y};
+        if (abs(e->pos.x - player.pos.x) > 1) {
+            vec2 enx = {e->pos.x + ENEMY_WALK_SPEED * (player.pos.x - e->pos.x > 0 ? 1 : -1), e->pos.y};
             if (!collision_detection(enx, true)) e->pos.x = enx.x;
         }
 
@@ -807,7 +803,7 @@ void enemy_update() {
             e->attack_cooldown = ENEMY_SHOT_COOLDOWN;
             e->projectile.active = true;
             e->projectile.pos = e->pos;
-            e->projectile.direction = norm(sub(p, e->pos));
+            e->projectile.direction = norm(sub(player.pos, e->pos));
         }
     }
 }
@@ -815,19 +811,23 @@ void enemy_update() {
 void enemy_attack_update() {
 
     for (int i = 0; i < NUM_ENEMIES; i++) {
-        projectile* p = &enemies[i].projectile;
-        if (!p->active) continue;
+        projectile* proj = &enemies[i].projectile;
+        if (!proj->active) continue;
 
         vec2 npos = {
-            p->pos.x + p->direction.x * PROJECTILE_SPEED,
-            p->pos.y + p->direction.y * PROJECTILE_SPEED
+            proj->pos.x + proj->direction.x * PROJECTILE_SPEED,
+            proj->pos.y + proj->direction.y * PROJECTILE_SPEED
         };
 
         bool hit = collision_detection(npos, true);
         if (hit) {
-            p->active = false;
+            proj->active = false;
         } else {
-            p->pos = npos;
+            proj->pos = npos;
+        }
+
+        if (dist2(proj->pos, player.pos) <= WALL_COLLISION_DIST) {
+
         }
     }
 }
@@ -923,12 +923,12 @@ void doom_setup(void) {
     }
 
     // Initializes player state
-    p = get_valid_spawn();
-    pa = 0;
-    shot_timer = 0;
+    player.pos = get_valid_spawn();
+    player.angle = 0;
+    player.shot_timer = 0;
+    player.score = 0;
+    player.has_key = false;
     last_frame = timer_read();
-    score = 0;
-    has_key = false;
     initialized = true;
 
     #ifdef RENDER_DEBUG
@@ -992,7 +992,7 @@ void render_debug(dll* root, segment cone_l, segment cone_r) {
     bresenham_line(walls[0], offset-1);
     bresenham_line(walls[0], offset-2);
     
-    oled_write_pixel(p.x + offset, p.y + offset, 1);
+    oled_write_pixel(player.pos.x + offset, player.pos.y + offset, 1);
     
     bresenham_line(cone_l, offset);
     bresenham_line(cone_l, offset+1);
@@ -1028,23 +1028,23 @@ void doom_update(controls c) {
     uint16_t time_elapsed = timer_elapsed(last_frame);
     if (time_elapsed < FRAME_TIME_MILLI) return;
     
-    if (shot_timer > 0) shot_timer--;
-    if (c.shoot && shot_timer == 0) shot_timer = PLAYER_SHOT_COOLDOWN;
+    if (player.shot_timer > 0) player.shot_timer--;
+    if (c.shoot && player.shot_timer == 0) player.shot_timer = PLAYER_SHOT_COOLDOWN;
 
     if (c.l) {
-        pa -= ROTATION_SPEED_RADS < 0 ? ROTATION_SPEED_RADS + 2 * PI : ROTATION_SPEED_RADS;
+        player.angle -= ROTATION_SPEED_RADS < 0 ? ROTATION_SPEED_RADS + 2 * PI : ROTATION_SPEED_RADS;
     }
 
     if (c.r) {
-        pa += ROTATION_SPEED_RADS >= 2 * PI ? ROTATION_SPEED_RADS - 2 * PI : ROTATION_SPEED_RADS;
+        player.angle += ROTATION_SPEED_RADS >= 2 * PI ? ROTATION_SPEED_RADS - 2 * PI : ROTATION_SPEED_RADS;
     }
 
     if (!c.d != !c.u) {
         int walk_dist = c.u ? WALK_SPEED : -WALK_SPEED;
-        vec2 pnx = {p.x + walk_dist * cosf(pa), p.y};
-        vec2 pny = {p.x, p.y + walk_dist * sinf(pa)};
-        if (!collision_detection(pnx, false)) p.x = pnx.x;
-        if (!collision_detection(pny, false)) p.y = pny.y;
+        vec2 pnx = {player.pos.x + walk_dist * cosf(player.angle), player.pos.y};
+        vec2 pny = {player.pos.x, player.pos.y + walk_dist * sinf(player.angle)};
+        if (!collision_detection(pnx, false)) player.pos.x = pnx.x;
+        if (!collision_detection(pny, false)) player.pos.y = pny.y;
     }
     
     for (int i = 0; i < NUM_ENEMIES; i++) {
@@ -1062,9 +1062,9 @@ void doom_update(controls c) {
 
     oled_clear();
     
-    render_map(p, pa, shot_timer > 0 && c.shoot);
+    render_map(player.shot_timer > 0 && c.shoot);
 
-    draw_gun(c.u, shot_timer > 0);
+    draw_gun(c.u, player.shot_timer > 0);
 
     for (int i = 0; i < SCREEN_WIDTH; i++) {
         oled_write_pixel(i, UI_HEIGHT, 1);
@@ -1092,7 +1092,7 @@ void doom_update(controls c) {
     // Displays the players current score
     oled_set_cursor(12, 7);
     oled_write_P(PSTR("SCORE:"), false);
-    oled_write(get_u8_str(score, ' '), false);
+    oled_write(get_u8_str(player.score, ' '), false);
 
     last_frame = timer_read();
 }

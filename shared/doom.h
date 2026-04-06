@@ -99,6 +99,16 @@ typedef struct sprite {
   const uint8_t height;
 } sprite;
 
+typedef struct player_info {
+  vec2 pos;
+  float angle;
+  uint8_t shot_timer;
+  uint8_t immunity_timer;
+  uint8_t hp;
+  uint8_t score;
+  bool has_key;
+} player_info;
+
 typedef struct projectile {
   vec2 pos;
   vec2 direction;
@@ -434,7 +444,7 @@ void draw_gun(bool moving, bool show_flash);
 
 void doom_update(controls c);
 
-void render_map(vec2 p, float pa, bool is_shooting);
+void render_map(bool is_shooting);
 
 float raycast(vec2 ray_origin, vec2 ray_direction, segment s, bool* hit);
 
