@@ -35,13 +35,14 @@
 #define TARGET_FPS            30
 
 #define WALL_COLLISION_DIST   5
-#define ENEMY_VISION_RANGE    100
 #define ENEMY_WALK_SPEED      1
 #define ROTATION_SPEED        5
 #define WALK_SPEED            4
 #define PLAYER_SHOT_COOLDOWN  2   // frames
+#define PLAYER_IMMUNITY_TIMER 8   // frames
 #define ENEMY_SHOT_COOLDOWN   60  // frames
 #define ENEMY_VIEW_DISTANCE   300
+#define ENEMY_UPDATE_RATE     200 // ms
 #define PROJECTILE_SPEED      2
 
 // RENDERING
@@ -53,6 +54,7 @@
 // MAP GEN
 #define WALL_OFFSET           27
 #define MIN_ROOM_WIDTH        20
+#define MIN_WALL_WIDTH        10
 #define MAP_GEN_REC_DEPTH     7
 #define MAP_WIDTH             500
 #define MAP_HEIGHT            500

@@ -36,6 +36,7 @@ static int num_walls = 0;
 
 // Enemy information
 static enemy enemies[NUM_ENEMIES];
+static uint16_t last_enemy_update;
 
 #ifdef RENDER_DEBUG
     static int raycast_calls = 0;
@@ -115,6 +116,7 @@ float raycast(vec2 ray_origin, vec2 ray_direction, segment s, bool* hit) {
 }
 
 bool point_lies_in_cone(segment cone_l, segment cone_r, vec2 u) {
+
     bool ccw_of_cone_r = (cone_r.v.x - cone_r.u.x) * (u.y - cone_r.u.y) < (cone_r.v.y - cone_r.u.y) * (u.x - cone_r.u.x);
     bool cw_of_cone_l = (cone_l.v.x - cone_l.u.x) * (u.y - cone_l.u.y) > (cone_l.v.y - cone_l.u.y) * (u.x - cone_l.u.x);
     return ccw_of_cone_r && cw_of_cone_l;
@@ -163,11 +165,12 @@ bool collision_detection(vec2 v, bool wall_collisions_only) {
 
 
 segment* bsp_wallgen(segment* walls, int* num_walls, int l, int r, int t, int b, int depth) {
+
     if (depth == 0) {
         // Prevent walls being created in small cells
         if (r - MIN_ROOM_WIDTH <= l + MIN_ROOM_WIDTH || b - MIN_ROOM_WIDTH <= t + MIN_ROOM_WIDTH) return walls;
         // Prevent thin walls being created
-        if (r - l - 2 * MIN_ROOM_WIDTH < 5 || b - t - 2 * MIN_ROOM_WIDTH < 5) return walls;
+        if (r - l < MIN_WALL_WIDTH || b - t < MIN_WALL_WIDTH) return walls;
 
         walls = (segment*) realloc(walls, sizeof(segment) * (*num_walls + 4));
         walls[(*num_walls)++] = (segment) {
@@ -196,7 +199,6 @@ segment* bsp_wallgen(segment* walls, int* num_walls, int l, int r, int t, int b,
 
         return walls;
     }
-    
 
     // Split on longest axis
     if (r - l >= b - t) {
@@ -234,6 +236,7 @@ segment* bsp_wallgen(segment* walls, int* num_walls, int l, int r, int t, int b,
 #ifdef RENDER_DEBUG
 
 void print_dll(dll* root) {
+
     dll* debug_curs = root;
     printf("Printing DLL: \n");
     if (!root) {
@@ -267,6 +270,7 @@ dll* merge_sort_dll(dll* root) {
             slow_ptr = slow_ptr->next;
         }
     }
+
 
     dll* r_root = slow_ptr->next;
     slow_ptr->next = NULL;
@@ -306,6 +310,7 @@ void render_map(bool is_shooting) {
         raycast_calls = 0;
     #endif
 
+    // Construct the left and right bounds of the FOV cone
     segment cone_l = {player.pos, {0, 0}};
     float bound_angle = player.angle - FOV_RADS / 2;
     cone_l.v.x = player.pos.x + DOV * cosf(bound_angle);
@@ -316,7 +321,7 @@ void render_map(bool is_shooting) {
     cone_r.v.x = player.pos.x + DOV * cosf(bound_angle);
     cone_r.v.y = player.pos.y + DOV * sinf(bound_angle);
     
-    // Stores the depth at each pixel and the phase of the wall it hit for easier reconstruction
+    // Stores the depth at each pixel and the phase of the wall it hit for occlusion later
     depth_buf_info depth_buf[SCREEN_WIDTH];
     segment ray = {player.pos, {0, 0}};
 
@@ -342,8 +347,10 @@ void render_map(bool is_shooting) {
         // If not check if it fully intersects the cone
         if (!relevant) raycast(player.pos, reference_vec, wall, &relevant);
 
+        // If wall doesn't intersect the FOV cone at all, skip it
         if (!relevant) continue;
         
+        // Get angle of each endpoint relative to player's view direction (sort key for sweepline algorithm)
         vec2 point_vec = sub(wall.u, player.pos);
         float theta_u = atan2f(cross(reference_vec, point_vec), dot(point_vec, reference_vec));
 
@@ -661,9 +668,9 @@ void draw_gun(bool moving, bool show_flash) {
         }
     } 
 
-    oled_write_bmp_P(gun_sprite, gun_x - GUN_WIDTH/2, gun_y - GUN_HEIGHT);
+    oled_write_bmp_P(gun_sprite, gun_x - GUN_WIDTH / 2, gun_y - GUN_HEIGHT);
     if (show_flash) {
-        oled_write_bmp_P(muzzle_flash_sprite, gun_x - FLASH_WIDTH/2 + 2, gun_y - 3*FLASH_HEIGHT/4 - GUN_HEIGHT);
+        oled_write_bmp_P(muzzle_flash_sprite, gun_x - FLASH_WIDTH / 2 + 2, gun_y - GUN_HEIGHT - 3 * FLASH_HEIGHT / 4);
     }
 }
 
@@ -780,11 +787,11 @@ void reload_enemy(enemy* e) {
 
 void enemy_update() {
 
-    int enemy_vision_range2 = ENEMY_VISION_RANGE * ENEMY_VISION_RANGE;
+    int enemy_vision_range2 = ENEMY_VIEW_DISTANCE * ENEMY_VIEW_DISTANCE;
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemy* e = &enemies[i];
         float player_dist2 = dist2(e->pos, player.pos);
-        if (player_dist2 > enemy_vision_range2 || player_dist2 <= ENEMY_VIEW_DISTANCE) continue;
+        if (player_dist2 > enemy_vision_range2) continue;
 
         // Move towards player if not too close
         if (abs(e->pos.y - player.pos.y) > 1) {
@@ -814,11 +821,13 @@ void enemy_attack_update() {
         projectile* proj = &enemies[i].projectile;
         if (!proj->active) continue;
 
+        // Calculate new position
         vec2 npos = {
             proj->pos.x + proj->direction.x * PROJECTILE_SPEED,
             proj->pos.y + proj->direction.y * PROJECTILE_SPEED
         };
 
+        // Handle collision with walls
         bool hit = collision_detection(npos, true);
         if (hit) {
             proj->active = false;
@@ -826,8 +835,11 @@ void enemy_attack_update() {
             proj->pos = npos;
         }
 
-        if (dist2(proj->pos, player.pos) <= WALL_COLLISION_DIST) {
-
+        // Handle collision with player. Immunity timer preveents multiple hits landing at the same time
+        if (!player.immunte_timer && dist2(proj->pos, player.pos) <= WALL_COLLISION_DIST) {
+            player.hp--;
+            player.immune_timer = PLAYER_IMMUNITY_TIMER;
+            proj->active = false;
         }
     }
 }
@@ -836,6 +848,7 @@ void enemy_attack_update() {
 // =================== GAME LOGIC =================== //
 
 
+// Returns a position on the map which is not within a wall.
 vec2 get_valid_spawn(void) {
 
     int col_dist2 = WALL_COLLISION_DIST * WALL_COLLISION_DIST;
@@ -1025,9 +1038,12 @@ void doom_update(controls c) {
 
     if (!initialized || timer_elapsed32(game_time) < START_TIME_MILLI) return;
     
+    // Limit framerate
     uint16_t time_elapsed = timer_elapsed(last_frame);
     if (time_elapsed < FRAME_TIME_MILLI) return;
     
+    // Update player state
+    if (player.immune_timer > 0) player.immune_timer--;
     if (player.shot_timer > 0) player.shot_timer--;
     if (c.shoot && player.shot_timer == 0) player.shot_timer = PLAYER_SHOT_COOLDOWN;
 
@@ -1047,6 +1063,7 @@ void doom_update(controls c) {
         if (!collision_detection(pny, false)) player.pos.y = pny.y;
     }
     
+    // Update enemy animation states
     for (int i = 0; i < NUM_ENEMIES; i++) {
         if (i == 0) {
             enemies[i].anim_state = time_elapsed % 2000 < 1000 ? 0 : 1;
@@ -1055,17 +1072,19 @@ void doom_update(controls c) {
         }
     }
 
-    if (time_elapsed % 200 < 100) {
+    // Update enemy positions and projectiles
+    if (timer_elapsed(last_enemy_update) > ENEMY_UPDATE_RATE) {
+        last_enemy_update = timer_read();
         enemy_update();
         enemy_attack_update();
     }
 
+    // Render the map and entities
     oled_clear();
-    
     render_map(player.shot_timer > 0 && c.shoot);
-
     draw_gun(c.u, player.shot_timer > 0);
 
+    // Draw the UI elements
     for (int i = 0; i < SCREEN_WIDTH; i++) {
         oled_write_pixel(i, UI_HEIGHT, 1);
     }
