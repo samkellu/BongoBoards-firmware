@@ -33,6 +33,8 @@ static int gun_anim_state = 0;
 // Level
 static segment* walls = NULL;
 static int num_walls = 0;
+static bool key_active = false;
+static vec2 key_pos;
 
 // Enemy information
 static enemy enemies[NUM_ENEMIES];
@@ -133,14 +135,15 @@ float inv_sqrt(float num) {
     return y * (1.5f - ( x2 * y * y ));
 }
 
-bool collision_detection(vec2 v, bool wall_collisions_only) {
+
+// Should do some Voronoi or closest cell type thing for performance.
+bool player_collision_detection(vec2 v) {
 
     int collision_dist2 = WALL_COLLISION_DIST * WALL_COLLISION_DIST;
     for (int i = 0; i < num_walls; i++) {
         segment w = walls[i];
-        float d2 = point_ray_dist2(v, w);
-        if (d2 < collision_dist2) {
-            if (i == 0 && player.score >= 5) {
+        if (point_ray_dist2(v, w) < collision_dist2) {
+            if (i == 0 && player.has_key) {
                 doom_setup();
             }
 
@@ -148,13 +151,31 @@ bool collision_detection(vec2 v, bool wall_collisions_only) {
         }
     }
 
-    if (wall_collisions_only) return false;
-
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemy e = enemies[i];
         collision_dist2 = e.width * e.width;
-        float d2 = dist2(v, e.pos);
-        if (d2 < collision_dist2) return true;
+        if (dist2(v, e.pos) < collision_dist2) return true;
+    }
+
+    if (key_active) {
+        collision_dist2 = 16; // Pick up distance
+        if (dist2(v, key_pos) < collision_dist2) {
+            player.has_key = true;
+            key_active = false;
+        }
+    }
+
+    return false;
+}
+
+bool enemy_collision_detection(vec2 v) {
+
+    int collision_dist2 = WALL_COLLISION_DIST * WALL_COLLISION_DIST;
+    for (int i = 0; i < num_walls; i++) {
+        segment w = walls[i];
+        if (point_ray_dist2(v, w) < collision_dist2) {
+           return true;
+        }
     }
 
     return false;
@@ -584,6 +605,13 @@ void render_map(bool is_shooting) {
         if (is_shooting && enemy_angle >= -FOV_RADS / 8 && enemy_angle < FOV_RADS / 8) {
             objects[n_objects++] = (render_obj) {&e->s_hurt[e->anim_state], e->pos};
             if (--e->health < 0) {
+
+                // Drop a key 
+                if (!player.has_key && rand() % KEY_DROP_CHANCE == 0) {
+                    key_active = true;
+                    key_pos = e->pos;
+                }
+
                 reload_enemy(e);
                 player.score++;
             }
@@ -594,6 +622,11 @@ void render_map(bool is_shooting) {
         if (e->projectile.active) {
             objects[n_objects++] = (render_obj) {e->projectile.s, e->projectile.pos};
         }
+    }
+
+    if (key_active) {
+        objects = (render_obj*) realloc(objects, sizeof(render_obj) * (n_objects + 1));
+        objects[n_objects++] = (render_obj) {&key_sprite, key_pos};
     }
 
     for (int i = 0; i < n_objects; i++) {
@@ -796,12 +829,12 @@ void enemy_update() {
         // Move towards player if not too close
         if (abs(e->pos.y - player.pos.y) > 1) {
             vec2 eny = {e->pos.x, e->pos.y + ENEMY_WALK_SPEED * (player.pos.y - e->pos.y > 0 ? 1 : -1)};
-            if (!collision_detection(eny, true)) e->pos.y = eny.y;
+            if (!enemy_collision_detection(eny)) e->pos.y = eny.y;
         }
 
         if (abs(e->pos.x - player.pos.x) > 1) {
             vec2 enx = {e->pos.x + ENEMY_WALK_SPEED * (player.pos.x - e->pos.x > 0 ? 1 : -1), e->pos.y};
-            if (!collision_detection(enx, true)) e->pos.x = enx.x;
+            if (!enemy_collision_detection(enx)) e->pos.x = enx.x;
         }
 
         // Attack if possible
@@ -828,7 +861,7 @@ void enemy_attack_update() {
         };
 
         // Handle collision with walls
-        bool hit = collision_detection(npos, true);
+        bool hit = enemy_collision_detection(npos);
         if (hit) {
             proj->active = false;
         } else {
@@ -1059,8 +1092,8 @@ void doom_update(controls c) {
         int walk_dist = c.u ? WALK_SPEED : -WALK_SPEED;
         vec2 pnx = {player.pos.x + walk_dist * cosf(player.angle), player.pos.y};
         vec2 pny = {player.pos.x, player.pos.y + walk_dist * sinf(player.angle)};
-        if (!collision_detection(pnx, false)) player.pos.x = pnx.x;
-        if (!collision_detection(pny, false)) player.pos.y = pny.y;
+        if (!player_collision_detection(pnx)) player.pos.x = pnx.x;
+        if (!player_collision_detection(pny)) player.pos.y = pny.y;
     }
     
     // Update enemy animation states
@@ -1092,7 +1125,7 @@ void doom_update(controls c) {
     #ifdef RENDER_DEBUG
         time_elapsed = timer_elapsed32(last_frame);
         int fpms = 1000 / (float) time_elapsed;
-        oled_set_cursor(0, 0);
+        oled_set_cursor(0, 1);
         oled_write("FPS:", false);
         oled_write(get_u16_str(fpms, ' '), false);
         oled_write("num raycast calls:", false);
@@ -1112,6 +1145,17 @@ void doom_update(controls c) {
     oled_set_cursor(12, 7);
     oled_write_P(PSTR("SCORE:"), false);
     oled_write(get_u8_str(player.score, ' '), false);
+
+    // Displays the players remaining hit points
+    oled_set_cursor(0, 0);
+    oled_write_P(PSTR("HP:"), false);
+    oled_write(get_u8_str(player.hp, ' '), false);
+
+    // Displays whether the player has the key or not
+    if (player.hasKey) {
+        oled_set_cursor(0, 7);
+        oled_write_P(PSTR("K"), false);
+    }
 
     last_frame = timer_read();
 }
