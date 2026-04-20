@@ -139,10 +139,9 @@ float inv_sqrt(float num) {
 // Should do some Voronoi or closest cell type thing for performance.
 bool player_collision_detection(vec2 v) {
 
-    int collision_dist2 = WALL_COLLISION_DIST * WALL_COLLISION_DIST;
     for (int i = 0; i < num_walls; i++) {
         segment w = walls[i];
-        if (point_ray_dist2(v, w) < collision_dist2) {
+        if (point_ray_dist2(v, w) < COLLISION_DIST2) {
             if (i == 0 && player.has_key) {
                 doom_setup();
             }
@@ -153,13 +152,11 @@ bool player_collision_detection(vec2 v) {
 
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemy e = enemies[i];
-        collision_dist2 = e.width * e.width;
-        if (dist2(v, e.pos) < collision_dist2) return true;
+        if (dist2(v, e.pos) < COLLISION_DIST2) return true;
     }
 
     if (key_active) {
-        collision_dist2 = 16; // Pick up distance
-        if (dist2(v, key_pos) < collision_dist2) {
+        if (dist2(v, key_pos) < COLLISION_DIST2) {
             player.has_key = true;
             key_active = false;
         }
@@ -170,10 +167,9 @@ bool player_collision_detection(vec2 v) {
 
 bool enemy_collision_detection(vec2 v) {
 
-    int collision_dist2 = WALL_COLLISION_DIST * WALL_COLLISION_DIST;
     for (int i = 0; i < num_walls; i++) {
         segment w = walls[i];
-        if (point_ray_dist2(v, w) < collision_dist2) {
+        if (point_ray_dist2(v, w) < COLLISION_DIST2) {
            return true;
         }
     }

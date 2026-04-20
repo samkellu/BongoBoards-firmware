@@ -34,7 +34,7 @@
 #define START_TIME_MILLI      4000
 #define TARGET_FPS            30
 
-#define WALL_COLLISION_DIST   5
+#define COLLISION_DIST        5
 #define ENEMY_WALK_SPEED      1
 #define ROTATION_SPEED        5
 #define WALK_SPEED            4
@@ -62,6 +62,7 @@
 #define DOOR_WIDTH            20
 #define DOOR_IDX              0
 
+static const int COLLISION_DIST2        = COLLISION_DIST * COLLISION_DIST
 static const float ROTATION_SPEED_RADS  = ROTATION_SPEED * PI / 180.0f;
 static const float FOV_RADS             = FOV * PI / 180.0f;
 static const float FRAME_TIME_MILLI     = 1000 / TARGET_FPS;
@@ -502,7 +503,9 @@ void enemy_update(void);
 
 void reload_enemy(enemy* e);
 
-bool collision_detection(vec2 p, bool is_enemy);
+bool player_collision_detection(vec2 p);
+
+bool enemy_collision_detection(vec2 p);
 
 float point_ray_dist2(vec2 p, segment s);
 
@@ -524,13 +527,5 @@ segment* bsp_wallgen(segment* walls, int* num_walls, int l, int r, int t, int b,
   
   void bresenham_line(segment s, int offset);
 #endif
-
-// void write_pixel(int x, int y, bool white);
-
-// void print_frame_buffer(void);
-
-// void clear_frame_buffer(void);
-
-// void render_frame_buffer(void);
 
 #endif
