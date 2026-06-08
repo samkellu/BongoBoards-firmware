@@ -638,8 +638,6 @@ void render_map(bool is_shooting) {
         int scale_height = obj.s->scale_factor * obj.s->height / (obj_dist * TANF_HALF_FOV_RADS);
         int scale_width = obj.s->scale_factor * obj.s->width / (obj_dist * TANF_HALF_FOV_RADS);
 
-        printf("%d %d %f\n", scale_height, scale_width, obj_dist);
-
         int obj_screen_x = SCREEN_WIDTH * ((obj_angle + (FOV_RADS / 2)) / FOV_RADS);
         int obj_screen_l = MAX(MIN(obj_screen_x - scale_width / 2, SCREEN_WIDTH - 1), 0);
         int obj_screen_r = MAX(MIN(obj_screen_x + scale_width / 2, SCREEN_WIDTH - 1), 0);
@@ -820,17 +818,27 @@ void enemy_update() {
 
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemy* e = &enemies[i];
-        float player_dist2 = dist2(e->pos, player.pos);
-        if (player_dist2 > ENEMY_VISION_RANGE2) continue;
 
-        // Move towards player if not too close
-        if (abs(e->pos.y - player.pos.y) > COLLISION_DIST) {
-            vec2 eny = {e->pos.x, e->pos.y + ENEMY_WALK_SPEED * (player.pos.y - e->pos.y > 0 ? 1 : -1)};
+        // Update enemy animation state
+        e->anim_state = !e->anim_state;
+
+        // Move towards player if within vision range
+        float player_dist2 = dist2(e->pos, player.pos);
+        if (player_dist2 > ENEMY_VISION_RANGE2 || player_dist2 <= COLLISION_DIST2) continue;
+
+        if (abs(e->pos.y - player.pos.y) > 0) {
+            vec2 eny = {
+                e->pos.x,
+                e->pos.y + MIN(ENEMY_WALK_SPEED, abs(e->pos.y - player.pos.y)) * (player.pos.y - e->pos.y > 0 ? 1 : -1)
+            };
             if (!enemy_collision_detection(eny)) e->pos.y = eny.y;
         }
 
-        if (abs(e->pos.x - player.pos.x) > COLLISION_DIST) {
-            vec2 enx = {e->pos.x + ENEMY_WALK_SPEED * (player.pos.x - e->pos.x > 0 ? 1 : -1), e->pos.y};
+        if (abs(e->pos.x - player.pos.x) > 0) {
+            vec2 enx = {
+                e->pos.x + MIN(ENEMY_WALK_SPEED, abs(e->pos.x - player.pos.x)) * (player.pos.x - e->pos.x > 0 ? 1 : -1),
+                e->pos.y
+            };
             if (!enemy_collision_detection(enx)) e->pos.x = enx.x;
         }
 
@@ -866,10 +874,13 @@ void enemy_attack_update() {
         }
 
         // Handle collision with player. Immunity timer preveents multiple hits landing at the same time
-        if (!player.immunity_timer && dist2(proj->pos, player.pos) <= COLLISION_DIST2) {
-            player.hp--;
-            player.immunity_timer = PLAYER_IMMUNITY_TIMER;
+        if (dist2(proj->pos, player.pos) <= COLLISION_DIST2)
+        {
             proj->active = false;
+            if (!player.immunity_timer) {
+                player.hp--;
+                player.immunity_timer = PLAYER_IMMUNITY_TIMER;
+            }
         }
     }
 }
@@ -1090,15 +1101,6 @@ void doom_update(controls c) {
         vec2 pny = {player.pos.x, player.pos.y + walk_dist * sinf(player.angle)};
         if (!player_collision_detection(pnx)) player.pos.x = pnx.x;
         if (!player_collision_detection(pny)) player.pos.y = pny.y;
-    }
-    
-    // Update enemy animation states
-    for (int i = 0; i < NUM_ENEMIES; i++) {
-        if (i == 0) {
-            enemies[i].anim_state = time_elapsed % 2000 < 1000 ? 0 : 1;
-        } else {
-            enemies[i].anim_state = enemies[0].anim_state;
-        }
     }
 
     // Update enemy positions and projectiles

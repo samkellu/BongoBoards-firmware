@@ -43,7 +43,7 @@
 #define ENEMY_VISION_RANGE    300
 #define ENEMY_WALK_SPEED      2
 #define ENEMY_UPDATE_RATE     100 // ms
-#define PROJECTILE_SPEED      2
+#define PROJECTILE_SPEED      3
 #define KEY_DROP_CHANCE       5   // 1/x chance of dropping a key on enemy death
 
 // RENDERING
