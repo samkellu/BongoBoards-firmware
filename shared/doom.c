@@ -635,10 +635,12 @@ void render_map(bool is_shooting) {
         
         // Walk across lateral pixels affected by sprite, if any have depth more than object distance draw the object.
         float obj_dist = magnitude(to_obj);
-        int scale_height = obj.s->height * 50 / obj_dist;
-        int scale_width = obj.s->width * 50 / obj_dist;
-        
-        int obj_screen_x = SCREEN_WIDTH * (obj_angle + (FOV_RADS / 2) / FOV_RADS);
+        int scale_height = obj.s->scale_factor * obj.s->height / (obj_dist * TANF_HALF_FOV_RADS);
+        int scale_width = obj.s->scale_factor * obj.s->width / (obj_dist * TANF_HALF_FOV_RADS);
+
+        printf("%d %d %f\n", scale_height, scale_width, obj_dist);
+
+        int obj_screen_x = SCREEN_WIDTH * ((obj_angle + (FOV_RADS / 2)) / FOV_RADS);
         int obj_screen_l = MAX(MIN(obj_screen_x - scale_width / 2, SCREEN_WIDTH - 1), 0);
         int obj_screen_r = MAX(MIN(obj_screen_x + scale_width / 2, SCREEN_WIDTH - 1), 0);
 
@@ -816,19 +818,18 @@ void reload_enemy(enemy* e) {
 
 void enemy_update() {
 
-    int enemy_vision_range2 = ENEMY_VIEW_DISTANCE * ENEMY_VIEW_DISTANCE;
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemy* e = &enemies[i];
         float player_dist2 = dist2(e->pos, player.pos);
-        if (player_dist2 > enemy_vision_range2) continue;
+        if (player_dist2 > ENEMY_VISION_RANGE2) continue;
 
         // Move towards player if not too close
-        if (abs(e->pos.y - player.pos.y) > 1) {
+        if (abs(e->pos.y - player.pos.y) > COLLISION_DIST) {
             vec2 eny = {e->pos.x, e->pos.y + ENEMY_WALK_SPEED * (player.pos.y - e->pos.y > 0 ? 1 : -1)};
             if (!enemy_collision_detection(eny)) e->pos.y = eny.y;
         }
 
-        if (abs(e->pos.x - player.pos.x) > 1) {
+        if (abs(e->pos.x - player.pos.x) > COLLISION_DIST) {
             vec2 enx = {e->pos.x + ENEMY_WALK_SPEED * (player.pos.x - e->pos.x > 0 ? 1 : -1), e->pos.y};
             if (!enemy_collision_detection(enx)) e->pos.x = enx.x;
         }
@@ -865,9 +866,9 @@ void enemy_attack_update() {
         }
 
         // Handle collision with player. Immunity timer preveents multiple hits landing at the same time
-        if (!player.immunte_timer && dist2(proj->pos, player.pos) <= WALL_COLLISION_DIST) {
+        if (!player.immunity_timer && dist2(proj->pos, player.pos) <= COLLISION_DIST2) {
             player.hp--;
-            player.immune_timer = PLAYER_IMMUNITY_TIMER;
+            player.immunity_timer = PLAYER_IMMUNITY_TIMER;
             proj->active = false;
         }
     }
@@ -880,11 +881,10 @@ void enemy_attack_update() {
 // Returns a position on the map which is not within a wall.
 vec2 get_valid_spawn(void) {
 
-    int col_dist2 = WALL_COLLISION_DIST * WALL_COLLISION_DIST;
     while (1) {
         vec2 new_pos = {
-            col_dist2 + (rand() % (MAP_WIDTH - col_dist2)),
-            col_dist2 + (rand() % (MAP_HEIGHT - col_dist2))
+            COLLISION_DIST + (rand() % (MAP_WIDTH - COLLISION_DIST)),
+            COLLISION_DIST + (rand() % (MAP_HEIGHT - COLLISION_DIST))
         };
 
         bool valid = true;
@@ -892,10 +892,10 @@ vec2 get_valid_spawn(void) {
             vec2 lt = walls[i+1].u;
             vec2 rb = walls[i+3].u;
 
-            valid &= new_pos.x > rb.x + col_dist2
-                  || new_pos.x < lt.x - col_dist2
-                  || new_pos.y < lt.y - col_dist2
-                  || new_pos.y > rb.y + col_dist2;
+            valid &= new_pos.x > rb.x + COLLISION_DIST
+                  || new_pos.x < lt.x - COLLISION_DIST
+                  || new_pos.y < lt.y - COLLISION_DIST
+                  || new_pos.y > rb.y + COLLISION_DIST;
                         
             if (!valid) continue;
         }
@@ -1072,7 +1072,7 @@ void doom_update(controls c) {
     if (time_elapsed < FRAME_TIME_MILLI) return;
     
     // Update player state
-    if (player.immune_timer > 0) player.immune_timer--;
+    if (player.immunity_timer > 0) player.immunity_timer--;
     if (player.shot_timer > 0) player.shot_timer--;
     if (c.shoot && player.shot_timer == 0) player.shot_timer = PLAYER_SHOT_COOLDOWN;
 
@@ -1148,7 +1148,7 @@ void doom_update(controls c) {
     oled_write(get_u8_str(player.hp, ' '), false);
 
     // Displays whether the player has the key or not
-    if (player.hasKey) {
+    if (player.has_key) {
         oled_set_cursor(0, 7);
         oled_write_P(PSTR("K"), false);
     }

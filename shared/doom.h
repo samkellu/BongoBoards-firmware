@@ -35,14 +35,14 @@
 #define TARGET_FPS            30
 
 #define COLLISION_DIST        5
-#define ENEMY_WALK_SPEED      1
 #define ROTATION_SPEED        5
 #define WALK_SPEED            4
 #define PLAYER_SHOT_COOLDOWN  8   // frames
 #define PLAYER_IMMUNITY_TIMER 8   // frames
 #define ENEMY_SHOT_COOLDOWN   60  // frames
-#define ENEMY_VIEW_DISTANCE   300
-#define ENEMY_UPDATE_RATE     200 // ms
+#define ENEMY_VISION_RANGE    300
+#define ENEMY_WALK_SPEED      2
+#define ENEMY_UPDATE_RATE     100 // ms
 #define PROJECTILE_SPEED      2
 #define KEY_DROP_CHANCE       5   // 1/x chance of dropping a key on enemy death
 
@@ -62,10 +62,12 @@
 #define DOOR_WIDTH            20
 #define DOOR_IDX              0
 
-static const int COLLISION_DIST2        = COLLISION_DIST * COLLISION_DIST
+static const int COLLISION_DIST2        = COLLISION_DIST * COLLISION_DIST;
+static const int ENEMY_VISION_RANGE2    = ENEMY_VISION_RANGE * ENEMY_VISION_RANGE;
 static const float ROTATION_SPEED_RADS  = ROTATION_SPEED * PI / 180.0f;
 static const float FOV_RADS             = FOV * PI / 180.0f;
 static const float FRAME_TIME_MILLI     = 1000 / TARGET_FPS;
+static const float TANF_HALF_FOV_RADS   = tanf((FOV * PI / 180.0f)/2);
 static const int GUN_X                  = SCREEN_WIDTH / 2;
 static const int GUN_Y                  = UI_HEIGHT;
 
@@ -101,6 +103,7 @@ typedef struct sprite {
   const uint16_t size;
   const uint8_t width;
   const uint8_t height;
+  const uint8_t scale_factor;
 } sprite;
 
 typedef struct player_info {
@@ -221,7 +224,8 @@ static const sprite doom_logo_sprite = {
   doom_logo,
   sizeof(doom_logo),
   LOGO_WIDTH,
-  LOGO_HEIGHT
+  LOGO_HEIGHT,
+  1
 };
 
 // Gun sprite and mask
@@ -254,7 +258,8 @@ static const sprite gun_sprite = {
   gun_bmp,
   sizeof(gun_bmp),
   GUN_WIDTH,
-  GUN_HEIGHT
+  GUN_HEIGHT,
+  1
 };
 
 // Enemy fireball sprite and mask
@@ -297,7 +302,8 @@ static const sprite fireball_sprite = {
   fireball_bmp,
   sizeof(fireball_bmp),
   FIREBALL_WIDTH,
-  FIREBALL_HEIGHT
+  FIREBALL_HEIGHT,
+  25
 };
 
 // Muzzle flash sprite
@@ -313,7 +319,8 @@ static const sprite muzzle_flash_sprite = {
   muzzle_flash_bmp,
   sizeof(muzzle_flash_bmp),
   FLASH_WIDTH,
-  FLASH_HEIGHT
+  FLASH_HEIGHT,
+  1
 };
 
 // Imp sprite and mask
@@ -384,7 +391,8 @@ static const sprite imp_sprite_1 = {
   imp_bmp_1,
   sizeof(imp_bmp_1),
   IMP_WIDTH,
-  IMP_HEIGHT
+  IMP_HEIGHT,
+  50
 };
 
 static const sprite imp_sprite_2 = {
@@ -392,7 +400,8 @@ static const sprite imp_sprite_2 = {
   imp_bmp_2,
   sizeof(imp_bmp_2),
   IMP_WIDTH,
-  IMP_HEIGHT
+  IMP_HEIGHT,
+  50
 };
 
 static const sprite imp_sheet[] = {imp_sprite_1, imp_sprite_2};
@@ -402,7 +411,8 @@ static const sprite imp_sprite_hurt_1 = {
   imp_bmp_mask_1,
   sizeof(imp_bmp_1),
   IMP_WIDTH,
-  IMP_HEIGHT
+  IMP_HEIGHT,
+  50
 };
 
 static const sprite imp_sprite_hurt_2 = {
@@ -410,7 +420,8 @@ static const sprite imp_sprite_hurt_2 = {
   imp_bmp_mask_2,
   sizeof(imp_bmp_2),
   IMP_WIDTH,
-  IMP_HEIGHT
+  IMP_HEIGHT,
+  50
 };
 
 static const sprite imp_hurt_sheet[] = {imp_sprite_hurt_1, imp_sprite_hurt_2};
@@ -454,7 +465,8 @@ static const sprite key_sprite = {
   key,
   sizeof(key),
   KEY_WIDTH,
-  KEY_HEIGHT
+  KEY_HEIGHT,
+  10
 };
 
 typedef struct endpoint {
