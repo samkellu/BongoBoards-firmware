@@ -14,11 +14,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
- // TODO: Remove, just for linting
-// #ifndef USE_EMULATOR
-//     #define USE_EMULATOR
-// #endif
-
 #include "bongo75.h"
 #include "../shared/doom.h"
 #include "../shared/bongo.h"

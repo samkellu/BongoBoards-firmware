@@ -112,13 +112,13 @@ led_t host_keyboard_led_state()
 
 const char* get_u8_str(uint8_t val, char pad) {
     static char buf[4] = {0};
-    snprintf(buf, 3, "%d", val);
+    snprintf(buf, 4, "%d", val);
     return buf;
 };
 
 const char* get_u16_str(uint16_t val, char pad) {
     static char buf[6] = {0};
-    snprintf(buf, 5, "%d", val);
+    snprintf(buf, 6, "%d", val);
     return buf;
 };
 
