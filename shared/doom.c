@@ -15,7 +15,6 @@
  */
 
 #include "doom.h"
-#include "math.h"
 
 // Player information
 static player_info player;
@@ -824,7 +823,7 @@ void enemy_update() {
 
         // Move towards player if within vision range
         float player_dist2 = dist2(e->pos, player.pos);
-        if (player_dist2 > ENEMY_VISION_RANGE2 || player_dist2 <= COLLISION_DIST2) continue;
+        if (player_dist2 > ENEMY_VISION_RANGE2 || player_dist2 <= ENEMY_PLAYER_DIST2) continue;
 
         if (abs(e->pos.y - player.pos.y) > 0) {
             vec2 eny = {
@@ -874,7 +873,7 @@ void enemy_attack_update() {
         }
 
         // Handle collision with player. Immunity timer preveents multiple hits landing at the same time
-        if (dist2(proj->pos, player.pos) <= COLLISION_DIST2)
+        if (dist2(proj->pos, player.pos) <= ENEMY_PLAYER_DIST2)
         {
             proj->active = false;
             if (!player.immunity_timer) {

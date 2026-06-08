@@ -22,6 +22,8 @@
   #include "quantum.h"
 #endif
 
+#include <math.h>
+
 #ifndef DOOM_INCL
 #define DOOM_INCL
 
@@ -43,6 +45,7 @@
 #define ENEMY_VISION_RANGE    300
 #define ENEMY_WALK_SPEED      2
 #define ENEMY_UPDATE_RATE     100 // ms
+#define ENEMY_PLAYER_DIST     25
 #define PROJECTILE_SPEED      3
 #define KEY_DROP_CHANCE       5   // 1/x chance of dropping a key on enemy death
 
@@ -62,6 +65,7 @@
 #define DOOR_WIDTH            20
 #define DOOR_IDX              0
 
+static const int ENEMY_PLAYER_DIST2     = ENEMY_PLAYER_DIST * ENEMY_PLAYER_DIST;
 static const int COLLISION_DIST2        = COLLISION_DIST * COLLISION_DIST;
 static const int ENEMY_VISION_RANGE2    = ENEMY_VISION_RANGE * ENEMY_VISION_RANGE;
 static const float ROTATION_SPEED_RADS  = ROTATION_SPEED * PI / 180.0f;
@@ -512,6 +516,8 @@ void vertical_line(int x, int half_length, bool color, int skip);
 void check_line(int x, int half_length, bool phase);
 
 void enemy_update(void);
+
+void enemy_attack_update(void);
 
 void reload_enemy(enemy* e);
 
