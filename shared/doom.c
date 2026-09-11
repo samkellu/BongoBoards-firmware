@@ -431,15 +431,19 @@ void render_map(bool is_shooting) {
     #endif
 
     // Skips rendering on every x walls for performance
-    for (int i = 0; i < SCREEN_WIDTH; i += RENDERER_COL_SKIP) {
-        float ray_angle = player.angle + (i * FOV_RADS / SCREEN_WIDTH) - (FOV_RADS / 2);
+    // for (int i = 0; i < SCREEN_WIDTH; i += RENDERER_COL_SKIP) {
+    //     float ray_angle = player.angle + (i * FOV_RADS / SCREEN_WIDTH) - (FOV_RADS / 2);
         
-        ray.v.x = cosf(ray_angle);
-        ray.v.y = sinf(ray_angle);
-        ray.v = norm(ray.v);
+    //     ray.v.x = cosf(ray_angle);
+    //     ray.v.y = sinf(ray_angle);
+    //     ray.v = norm(ray.v);
         
-        float theta = atan2f(cross(reference_vec, ray.v), dot(reference_vec, ray.v));
-        float closest_distance = -1.0;
+    //     float theta = atan2f(cross(reference_vec, ray.v), dot(reference_vec, ray.v));
+    //     float closest_distance = -1.0;
+
+    screenspace_segment* active_segments = null;
+    int num_active_segments = 0; 
+    while (sweep_curs) {
 
         // Only consider a segment as a rendering target if the sweepline has passed its "start" endpoint
         while (sweep_curs && sweep_curs->sorting_factor < theta) {
@@ -514,6 +518,12 @@ void render_map(bool is_shooting) {
                     closest_wall = s;
                 }
             }
+
+            // TODO: Convert ray angle to screenspace x coord
+            active_segments = realloc(active_segments, sizeof(screenspace_segment) * (num_active_segments + 1));
+            active_segments[num_active_segments] = (screenspace_segment) {closest_wall, }
+            num_active_segments
+
         }
         
         depth_buf_info info = {MAX_VIEW_DIST, 0, 0, 0};
@@ -526,11 +536,8 @@ void render_map(bool is_shooting) {
                 closest_distance = raycast(ray.u, ray.v, *closest_wall, NULL);
             }
             
-            info.depth = closest_distance;
-            info.tex = closest_wall->tex;
-            
             // Draws lines at the edges of walls
-            vec2 hit_pt = { ray.u.x + ray.v.x * info.depth, ray.u.y + ray.v.y * info.depth };
+            vec2 hit_pt = { ray.u.x + ray.v.x * closest_distance, ray.u.y + ray.v.y * closest_distance };
             int wall_len = 1 / inv_sqrt(dist2(closest_wall->u, closest_wall->v));
             int wall2pt = 1 / inv_sqrt(dist2(closest_wall->u, hit_pt));
             
@@ -539,6 +546,8 @@ void render_map(bool is_shooting) {
             bresenham_line(s, 70);
             #endif
             
+            info.depth = closest_distance;
+            info.tex = closest_wall->tex;
             info.wall_len = wall_len;
             info.length = 1000 / info.depth;
             info.wall2pt = wall2pt;
@@ -551,19 +560,21 @@ void render_map(bool is_shooting) {
     }
 
     int last_real_idx = 0;
+    int next_real_idx = 0;
     for (int i = 0; i < SCREEN_WIDTH; i+=2)
     {
         depth_buf_info info = depth_buf[i];
         if (i % RENDERER_COL_SKIP == 0)
         {
             last_real_idx = i;
+            next_real_idx = MIN(last_real_idx + RENDERER_COL_SKIP, SCREEN_WIDTH - 1);
         }
 
         if (last_real_idx != i)
         {
             float interpolation_factor = (i - last_real_idx) / (float) RENDERER_COL_SKIP;
-            info.length = depth_buf[last_real_idx].length + (depth_buf[last_real_idx + RENDERER_COL_SKIP].length - depth_buf[last_real_idx].length) * interpolation_factor;
-            info.wall2pt = depth_buf[last_real_idx].wall2pt + (depth_buf[last_real_idx + RENDERER_COL_SKIP].wall2pt - depth_buf[last_real_idx].wall2pt) * interpolation_factor;
+            info.length = depth_buf[last_real_idx].length + (depth_buf[next_real_idx].length - depth_buf[last_real_idx].length) * interpolation_factor;
+            info.wall2pt = depth_buf[last_real_idx].wall2pt + (depth_buf[next_real_idx].wall2pt - depth_buf[last_real_idx].wall2pt) * interpolation_factor;
         }
 
         draw_wall_from_depth_buf(info, i);
@@ -1175,15 +1186,15 @@ void doom_update(controls c) {
         }
     }
 
+    time_elapsed = timer_elapsed32(last_frame);
+    int fpms = 1000 / (float) time_elapsed;
+    oled_set_cursor(0, 1);
+    oled_write("FPS:", false);
+    oled_write(get_u16_str(fpms, ' '), false);
     #ifdef RENDER_DEBUG
-        time_elapsed = timer_elapsed32(last_frame);
-        int fpms = 1000 / (float) time_elapsed;
-        oled_set_cursor(0, 1);
-        oled_write("FPS:", false);
-        oled_write(get_u16_str(fpms, ' '), false);
-        oled_write("num raycast calls:", false);
-        oled_write(get_u16_str(raycast_calls, ' '), false);
-        
+    oled_write("num raycast calls:", false);
+    oled_write(get_u16_str(raycast_calls, ' '), false);
+    
         render();
         last_frame = timer_read();
         return;
@@ -1195,13 +1206,13 @@ void doom_update(controls c) {
     oled_write(get_u16_str((timer_elapsed(game_time) - START_TIME_MILLI) / 1000, ' '), false);
     
     // Displays the players current score
-    oled_set_cursor(0, 0);
-    oled_write_P(PSTR("SCORE:"), false);
-    oled_write(get_u8_str(player.score, ' '), false);
+    // oled_set_cursor(0, 0);
+    // oled_write_P(PSTR("SCORE:"), false);
+    // oled_write(get_u8_str(player.score, ' '), false);
 
-    oled_set_cursor(14, 0);
-    oled_write_P(PSTR("LV:"), false);
-    oled_write(get_u8_str(level, ' '), false);
+    // oled_set_cursor(14, 0);
+    // oled_write_P(PSTR("LV:"), false);
+    // oled_write(get_u8_str(level, ' '), false);
 
     // Displays the players remaining hit points
     oled_set_cursor(14, 7);

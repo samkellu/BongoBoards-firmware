@@ -80,9 +80,7 @@ oled_rotation_t oled_init_user(oled_rotation_t rotation) {
     return OLED_ROTATION_180;
 }
 
-bool oled_task_kb(void) {
-
-    if (!oled_task_user()) return false;
+bool oled_task_user(void) {
 
     switch (screen_mode) {
         case CAT:

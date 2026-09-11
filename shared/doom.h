@@ -55,7 +55,7 @@
 #define FOV                   80.0f
 #define MAX_VIEW_DIST         100000.0f
 #define UI_HEIGHT             54
-#define RENDERER_COL_SKIP     4
+#define RENDERER_COL_SKIP     2
 
 // MAP GEN
 #define WALL_OFFSET           27
@@ -84,7 +84,6 @@ typedef struct vec2 {
 
 typedef enum wall_tex {
   CHECK,
-  LINES,
   DOOR,
 } wall_tex;
 
@@ -150,6 +149,12 @@ typedef struct depth_buf_info {
   int wall_len;
   wall_tex tex;
 } depth_buf_info;
+
+typedef struct screenspace_segment {
+  segment s;
+  int screenspace_l_idx;
+  int screenspace_r_idx;
+} screenspace_segment;
 
 typedef struct render_obj {
   const sprite* s;
