@@ -141,10 +141,6 @@ bool player_collision_detection(vec2 v) {
     for (int i = 0; i < num_walls; i++) {
         segment w = walls[i];
         if (point_ray_dist2(v, w) < COLLISION_DIST2) {
-            if (i == 0 && player.has_key) {
-                doom_setup();
-            }
-
            return true;
         }
     }
@@ -584,7 +580,6 @@ void render_map(bool is_shooting) {
         free(val);
     }
     
-    // TODO: New collection for renderable entities rather than enemies.
     // Order by distance for proper occlusion.
 
     render_obj* objects = NULL;
@@ -600,13 +595,6 @@ void render_map(bool is_shooting) {
         if (is_shooting && enemy_angle >= -FOV_RADS / 8 && enemy_angle < FOV_RADS / 8) {
             objects[n_objects++] = (render_obj) {&e->s_hurt[e->anim_state], e->pos};
             if (--e->health < 0) {
-
-                // Drop a key 
-                if (!player.has_key && rand() % KEY_DROP_CHANCE == 0) {
-                    key_active = true;
-                    key_pos = e->pos;
-                }
-
                 reload_enemy(e);
                 player.score++;
             }
@@ -952,7 +940,11 @@ void doom_setup(void) {
     door_wall->v = door_start;
 
     walls = bsp_wallgen(walls, &num_walls, 0, MAP_WIDTH, 0, MAP_HEIGHT, MAP_GEN_REC_DEPTH);
-
+    
+    // Spawn key
+    key_active = true;
+    key_pos = get_valid_spawn();
+    
     // Initializes the list of possible enemy spawn locations
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemies[i] = (enemy) {
@@ -1053,6 +1045,23 @@ void render_debug(dll* root, segment cone_l, segment cone_r) {
     bresenham_line(cone_r, offset+1);
     bresenham_line(cone_r, offset-1);
     
+    if (key_active)
+    {
+        oled_write_pixel(key_pos.x+offset, key_pos.y+offset, 1);
+        oled_write_pixel(key_pos.x+offset+1, key_pos.y+offset, 1);
+        oled_write_pixel(key_pos.x+offset-1, key_pos.y+offset, 1);
+        oled_write_pixel(key_pos.x+offset, key_pos.y+offset+1, 1);
+        oled_write_pixel(key_pos.x+offset, key_pos.y+offset-1, 1);
+                oled_write_pixel(key_pos.x+offset+2, key_pos.y+offset, 1);
+        oled_write_pixel(key_pos.x+offset-1, key_pos.y+offset, 1);
+        oled_write_pixel(key_pos.x+offset, key_pos.y+offset+2, 1);
+        oled_write_pixel(key_pos.x+offset, key_pos.y+offset-1, 1);
+                oled_write_pixel(key_pos.x+offset+3, key_pos.y+offset, 1);
+        oled_write_pixel(key_pos.x+offset-3, key_pos.y+offset, 1);
+        oled_write_pixel(key_pos.x+offset, key_pos.y+offset+3, 1);
+        oled_write_pixel(key_pos.x+offset, key_pos.y+offset-3, 1);
+    }
+
     for (int i = 0; i < NUM_ENEMIES; i++)
     {
         enemy e = enemies[i];
@@ -1111,12 +1120,23 @@ void doom_update(controls c) {
 
     // Render the map and entities
     oled_clear();
-    render_map(player.shot_timer > 0 && c.shoot);
-    draw_gun(c.u, player.shot_timer > 0);
+    render_map(player.shot_timer == PLAYER_SHOT_COOLDOWN);
+    draw_gun(c.u, player.shot_timer > PLAYER_SHOT_COOLDOWN - SHOT_FLASH_DURATION);
 
     // Draw the UI elements
     for (int i = 0; i < SCREEN_WIDTH; i++) {
         oled_write_pixel(i, UI_HEIGHT, 1);
+    }
+
+    // Check if the player is near the door.
+    // If they have a key, continue to next level, else show instructions
+    if (point_ray_dist2(player.pos, walls[0]) < DOOR_BOUNDARY) {
+        if (player.has_key) {
+            doom_setup();
+        } else {
+            oled_set_cursor(0, 2);
+            oled_write_P(PSTR("KEY REQUIRED"), false);
+        }
     }
 
     #ifdef RENDER_DEBUG
