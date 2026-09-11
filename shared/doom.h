@@ -34,7 +34,7 @@
 
 #define PI                    3.14159
 #define START_TIME_MILLI      4000
-#define TARGET_FPS            30
+#define TARGET_FPS            20
 
 #define COLLISION_DIST        5
 #define ROTATION_SPEED        5
@@ -55,6 +55,7 @@
 #define FOV                   80.0f
 #define MAX_VIEW_DIST         100000.0f
 #define UI_HEIGHT             54
+#define RENDERER_COL_SKIP     4
 
 // MAP GEN
 #define WALL_OFFSET           27
@@ -128,7 +129,8 @@ typedef struct projectile {
   bool active;
 } projectile;
 
-#define NUM_ENEMIES 2
+#define MAX_ENEMIES 8
+#define MIN_ENEMIES 2
 typedef struct enemy {
   vec2 pos;
   int health;
@@ -137,16 +139,16 @@ typedef struct enemy {
   const sprite* s;
   int num_sprites;
   const sprite* s_hurt;
-  int num_hurt_sprites;
   int attack_cooldown;
   projectile projectile;
 } enemy;
 
 typedef struct depth_buf_info {
   float depth;
-  bool phase;
   int length;
-  bool is_checked;
+  int wall2pt;
+  int wall_len;
+  wall_tex tex;
 } depth_buf_info;
 
 typedef struct render_obj {
@@ -409,6 +411,7 @@ static const sprite imp_sprite_2 = {
   50
 };
 
+static const int imp_sprite_sheet_size = 2;
 static const sprite imp_sheet[] = {imp_sprite_1, imp_sprite_2};
 
 static const sprite imp_sprite_hurt_1 = {
@@ -430,7 +433,6 @@ static const sprite imp_sprite_hurt_2 = {
 };
 
 static const sprite imp_hurt_sheet[] = {imp_sprite_hurt_1, imp_sprite_hurt_2};
-
 
 // Key sprite and mask
 #define KEY_WIDTH   16
@@ -487,6 +489,8 @@ void draw_gun(bool moving, bool show_flash);
 void doom_update(controls c);
 
 void render_map(bool is_shooting);
+
+void draw_wall_from_depth_buf(depth_buf_info info, int x);
 
 float raycast(vec2 ray_origin, vec2 ray_direction, segment s, bool* hit);
 

@@ -37,7 +37,8 @@ static vec2 key_pos;
 static int level = 1;
 
 // Enemy information
-static enemy enemies[NUM_ENEMIES];
+static int num_enemies = MIN_ENEMIES;
+static enemy* enemies = NULL;
 static uint16_t last_enemy_update;
 
 #ifdef RENDER_DEBUG
@@ -146,7 +147,7 @@ bool player_collision_detection(vec2 v) {
         }
     }
 
-    for (int i = 0; i < NUM_ENEMIES; i++) {
+    for (int i = 0; i < num_enemies; i++) {
         enemy e = enemies[i];
         if (dist2(v, e.pos) < COLLISION_DIST2) return true;
     }
@@ -429,8 +430,8 @@ void render_map(bool is_shooting) {
         print_dll(root);
     #endif
 
-    // Skips every second raycast on walls for performance
-    for (int i = 0; i < SCREEN_WIDTH; i += 2) {
+    // Skips rendering on every x walls for performance
+    for (int i = 0; i < SCREEN_WIDTH; i += RENDERER_COL_SKIP) {
         float ray_angle = player.angle + (i * FOV_RADS / SCREEN_WIDTH) - (FOV_RADS / 2);
         
         ray.v.x = cosf(ray_angle);
@@ -524,53 +525,48 @@ void render_map(bool is_shooting) {
             if (closest_distance < 0) {
                 closest_distance = raycast(ray.u, ray.v, *closest_wall, NULL);
             }
-
+            
             info.depth = closest_distance;
-
+            info.tex = closest_wall->tex;
+            
             // Draws lines at the edges of walls
             vec2 hit_pt = { ray.u.x + ray.v.x * info.depth, ray.u.y + ray.v.y * info.depth };
             int wall_len = 1 / inv_sqrt(dist2(closest_wall->u, closest_wall->v));
             int wall2pt = 1 / inv_sqrt(dist2(closest_wall->u, hit_pt));
             
             #ifdef RENDER_DEBUG
-                segment s = { ray.u, hit_pt };
-                bresenham_line(s, 70);
+            segment s = { ray.u, hit_pt };
+            bresenham_line(s, 70);
             #endif
             
+            info.wall_len = wall_len;
             info.length = 1000 / info.depth;
-            switch (closest_wall->tex) {
-                case CHECK:
-                    info.phase = wall2pt % 10 < 5;
-                    if (wall2pt < 2 || wall2pt > wall_len - 2) {
-                        vertical_line(i, info.length, 1, 2);
-                        
-                    } else {
-                        info.is_checked = true;
-                        check_line(i, info.length, info.phase);
-                    }
-                    
-                    break;
-
-                case LINES:
-                    info.phase = (wall2pt + 1) % 20 < 3;
-                    vertical_line(i, info.length, 1, MAX(1, info.length - 1));
-
-                    if (info.phase) {
-                        vertical_line(i, info.length, 1, 1);
-                    } else if (wall2pt < 2 || wall2pt > wall_len - 2) {
-                        vertical_line(i, info.length, 1, 1);
-                    }
-                    
-                    break;
-
-                case DOOR:
-                    vertical_line(i, info.length, 1, 1);
-                    break;
-            }
+            info.wall2pt = wall2pt;
         }
         
-        depth_buf[i] = info;
-        depth_buf[i+1] = depth_buf[i];
+        for (int j = i; j < SCREEN_WIDTH && j < i + RENDERER_COL_SKIP; j++)
+        {
+            depth_buf[j] = info;
+        }
+    }
+
+    int last_real_idx = 0;
+    for (int i = 0; i < SCREEN_WIDTH; i+=2)
+    {
+        depth_buf_info info = depth_buf[i];
+        if (i % RENDERER_COL_SKIP == 0)
+        {
+            last_real_idx = i;
+        }
+
+        if (last_real_idx != i)
+        {
+            float interpolation_factor = (i - last_real_idx) / (float) RENDERER_COL_SKIP;
+            info.length = depth_buf[last_real_idx].length + (depth_buf[last_real_idx + RENDERER_COL_SKIP].length - depth_buf[last_real_idx].length) * interpolation_factor;
+            info.wall2pt = depth_buf[last_real_idx].wall2pt + (depth_buf[last_real_idx + RENDERER_COL_SKIP].wall2pt - depth_buf[last_real_idx].wall2pt) * interpolation_factor;
+        }
+
+        draw_wall_from_depth_buf(info, i);
     }
 
     // dealloc segment list
@@ -581,12 +577,10 @@ void render_map(bool is_shooting) {
         free(val);
     }
     
-    // Order by distance for proper occlusion.
-
     render_obj* objects = NULL;
     int n_objects = 0;
 
-    for (int i = 0; i < NUM_ENEMIES; i++) {
+    for (int i = 0; i < num_enemies; i++) {
         enemy* e = &enemies[i];
         int to_add = e->projectile.active ? 2 : 1;
         objects = (render_obj*) realloc(objects, sizeof(render_obj) * (n_objects + to_add));
@@ -653,18 +647,45 @@ void render_map(bool is_shooting) {
             }
             
             vertical_line(j, SCREEN_HEIGHT, 0, 1);
-            if (j % 2 != 0) continue;
+            if (j % RENDERER_COL_SKIP != 0) continue;
 
-            if (info.is_checked) {
-                check_line(j, info.length, info.phase);
-            
-            } else {
-                vertical_line(j, info.length, 1, 2);
-            }
+            draw_wall_from_depth_buf(info, i);
         }
     }
 
     free(objects);
+}
+
+void draw_wall_from_depth_buf(depth_buf_info info, int x)
+{
+    switch (info.tex) {
+        case CHECK:
+            bool phase = info.wall2pt % 10 < 5;
+            if (info.wall2pt < 2 || info.wall2pt > info.wall_len - 2) {
+                vertical_line(x, info.length, 1, 2);
+                
+            } else {
+                check_line(x, info.length, phase);
+            }
+            
+            break;
+
+        // case LINES:
+        //     info.phase = (wall2pt + 1) % 20 < 3;
+        //     //vertical_line(i, info.length, 1, MAX(1, info.length - 1));
+
+        //     // if (info.phase) {
+        //     //     vertical_line(i, info.length, 1, 1);
+        //     // } else if (wall2pt < 2 || wall2pt > wall_len - 2) {
+        //     //     vertical_line(i, info.length, 1, 1);
+        //     // }
+            
+        //     break;
+
+        case DOOR:
+            vertical_line(x, info.length, 1, 1);
+            break;
+    }
 }
 
 void draw_gun(bool moving, bool show_flash) {
@@ -804,11 +825,13 @@ void reload_enemy(enemy* e) {
 
 void enemy_update() {
 
-    for (int i = 0; i < NUM_ENEMIES; i++) {
+    uint32_t timer_elpased = timer_elapsed32(game_time)/1000;
+    for (int i = 0; i < num_enemies; i++) {
         enemy* e = &enemies[i];
 
         // Update enemy animation state
-        e->anim_state = !e->anim_state;
+        // Around one second per anim state
+        e->anim_state = timer_elpased % e->num_sprites;
 
         // Move towards player if within vision range
         float player_dist2 = dist2(e->pos, player.pos);
@@ -843,7 +866,7 @@ void enemy_update() {
 
 void enemy_attack_update() {
 
-    for (int i = 0; i < NUM_ENEMIES; i++) {
+    for (int i = 0; i < num_enemies; i++) {
         projectile* proj = &enemies[i].projectile;
         if (!proj->active) continue;
 
@@ -903,13 +926,10 @@ vec2 get_valid_spawn(void) {
     }
 }
 
-void doom_setup(void) {
+void generate_new_level(void) {
 
-    // Runs intro sequence
-    oled_write_bmp_P(doom_logo_sprite, 0, 0);
-    game_time = timer_read();
-    srand(game_time);
-    level = 1;
+    free(walls);
+    free(enemies);
 
     // Initializes the map and door
     walls = (segment*) malloc(sizeof(segment) * 6);
@@ -941,6 +961,7 @@ void doom_setup(void) {
     walls[num_walls++] = (segment) {door_end, {door_wall->v.x, door_wall->v.y}, CHECK};
     door_wall->v = door_start;
 
+    // Dungeon generation algorithm
     walls = bsp_wallgen(walls, &num_walls, 0, MAP_WIDTH, 0, MAP_HEIGHT, MAP_GEN_REC_DEPTH);
     
     // Spawn key
@@ -948,16 +969,17 @@ void doom_setup(void) {
     key_pos = get_valid_spawn();
     
     // Initializes the list of possible enemy spawn locations
-    for (int i = 0; i < NUM_ENEMIES; i++) {
+    num_enemies = MIN(MIN_ENEMIES + level - 1, MAX_ENEMIES);
+    enemies = (enemy*) malloc(sizeof(enemy) * num_enemies);
+    for (int i = 0; i < num_enemies; i++) {
         enemies[i] = (enemy) {
             get_valid_spawn(),
             5,
             8,
             0,
             imp_sheet,
-            sizeof(imp_sheet),
+            imp_sprite_sheet_size,
             imp_hurt_sheet,
-            sizeof(imp_hurt_sheet),
             ENEMY_SHOT_COOLDOWN,
             (projectile) {
                 (vec2) { 0, 0 },
@@ -981,6 +1003,17 @@ void doom_setup(void) {
         // Use emulator to render
         render();
     #endif
+}
+
+void doom_setup(void) {
+
+    // Runs intro sequence
+    oled_write_bmp_P(doom_logo_sprite, 0, 0);
+    game_time = timer_read();
+    srand(game_time);
+    level = 1;
+
+    generate_new_level();
 }
 
 void doom_dispose(void) {
@@ -1064,7 +1097,7 @@ void render_debug(dll* root, segment cone_l, segment cone_r) {
         oled_write_pixel(key_pos.x+offset, key_pos.y+offset-3, 1);
     }
 
-    for (int i = 0; i < NUM_ENEMIES; i++)
+    for (int i = 0; i < num_enemies; i++)
     {
         enemy e = enemies[i];
         oled_write_pixel(e.pos.x + offset, e.pos.y + offset, 1);
@@ -1134,8 +1167,8 @@ void doom_update(controls c) {
     // If they have a key, continue to next level, else show instructions
     if (point_ray_dist2(player.pos, walls[0]) < DOOR_BOUNDARY) {
         if (player.has_key) {
-            doom_setup();
             level++;
+            generate_new_level();
         } else {
             oled_set_cursor(4, 2);
             oled_write_P(PSTR("KEY REQUIRED"), false);
@@ -1166,12 +1199,12 @@ void doom_update(controls c) {
     oled_write_P(PSTR("SCORE:"), false);
     oled_write(get_u8_str(player.score, ' '), false);
 
-    oled_set_cursor(12, 0);
+    oled_set_cursor(14, 0);
     oled_write_P(PSTR("LV:"), false);
     oled_write(get_u8_str(level, ' '), false);
 
     // Displays the players remaining hit points
-    oled_set_cursor(0, 0);
+    oled_set_cursor(14, 7);
     oled_write_P(PSTR("HP:"), false);
     oled_write(get_u8_str(player.hp, ' '), false);
 
