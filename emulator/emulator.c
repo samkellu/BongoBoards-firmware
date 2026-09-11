@@ -68,7 +68,7 @@ uint32_t timer_elapsed32(uint32_t t) {
     return timer_read32() - t;
 }
 
-int timer_elapsed(int t) {
+uint16_t timer_elapsed(uint16_t t) {
     return timer_read() - t;
 }
 

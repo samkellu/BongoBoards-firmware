@@ -40,7 +40,7 @@ void render();
 int oled_write_pixel(int, int, bool);
 uint16_t timer_read();
 uint32_t timer_read32();
-int timer_elapsed(int);
+uint16_t timer_elapsed(uint16_t);
 uint32_t timer_elapsed32(uint32_t);
 int oled_set_cursor(int, int);
 int oled_write(const char*, int);

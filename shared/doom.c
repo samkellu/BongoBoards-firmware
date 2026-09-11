@@ -34,6 +34,7 @@ static segment* walls = NULL;
 static int num_walls = 0;
 static bool key_active = false;
 static vec2 key_pos;
+static int level = 1;
 
 // Enemy information
 static enemy enemies[NUM_ENEMIES];
@@ -908,6 +909,7 @@ void doom_setup(void) {
     oled_write_bmp_P(doom_logo_sprite, 0, 0);
     game_time = timer_read();
     srand(game_time);
+    level = 1;
 
     // Initializes the map and door
     walls = (segment*) malloc(sizeof(segment) * 6);
@@ -949,7 +951,7 @@ void doom_setup(void) {
     for (int i = 0; i < NUM_ENEMIES; i++) {
         enemies[i] = (enemy) {
             get_valid_spawn(),
-            10,
+            5,
             8,
             0,
             imp_sheet,
@@ -1133,8 +1135,9 @@ void doom_update(controls c) {
     if (point_ray_dist2(player.pos, walls[0]) < DOOR_BOUNDARY) {
         if (player.has_key) {
             doom_setup();
+            level++;
         } else {
-            oled_set_cursor(0, 2);
+            oled_set_cursor(4, 2);
             oled_write_P(PSTR("KEY REQUIRED"), false);
         }
     }
@@ -1159,9 +1162,13 @@ void doom_update(controls c) {
     oled_write(get_u16_str((timer_elapsed(game_time) - START_TIME_MILLI) / 1000, ' '), false);
     
     // Displays the players current score
-    oled_set_cursor(12, 7);
+    oled_set_cursor(0, 0);
     oled_write_P(PSTR("SCORE:"), false);
     oled_write(get_u8_str(player.score, ' '), false);
+
+    oled_set_cursor(12, 0);
+    oled_write_P(PSTR("LV:"), false);
+    oled_write(get_u8_str(level, ' '), false);
 
     // Displays the players remaining hit points
     oled_set_cursor(0, 0);
@@ -1170,7 +1177,7 @@ void doom_update(controls c) {
 
     // Displays whether the player has the key or not
     if (player.has_key) {
-        oled_set_cursor(0, 7);
+        oled_set_cursor(0, 1);
         oled_write_P(PSTR("K"), false);
     }
 
