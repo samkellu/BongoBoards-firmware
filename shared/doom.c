@@ -335,8 +335,6 @@ void render_map(bool is_shooting) {
     cone_r.v.x = player.pos.x + DOV * cosf(bound_angle);
     cone_r.v.y = player.pos.y + DOV * sinf(bound_angle);
     
-    // Stores the depth at each pixel and the phase of the wall it hit for occlusion later
-    depth_buf_info depth_buf[SCREEN_WIDTH];
     segment ray = {player.pos, {0, 0}};
 
     dll* root = NULL;
@@ -393,7 +391,7 @@ void render_map(bool is_shooting) {
 
         // Break segments down into endpoints to facilitate sweepline rendering algorithm
         endpoint* u_point = (endpoint*) malloc(sizeof(endpoint));
-        *u_point = (endpoint) {&walls[i], NULL, u_is_end};
+        *u_point = (endpoint) {&walls[i], NULL, u_is_end, theta_u, theta_v};
 
         dll* u_node = (dll*) malloc(sizeof(dll));
         *u_node = (dll) {u_point, NULL, NULL, theta_u};
@@ -407,7 +405,7 @@ void render_map(bool is_shooting) {
         }
         
         endpoint* v_point = (endpoint*) malloc(sizeof(endpoint));
-        *v_point = (endpoint) {&walls[i], u_node, !u_is_end};
+        *v_point = (endpoint) {&walls[i], u_node, !u_is_end, theta_v, theta_u};
         
         dll* v_node = (dll*) malloc(sizeof(dll));
         *v_node = (dll) {v_point, NULL, curs, theta_v};
@@ -432,150 +430,231 @@ void render_map(bool is_shooting) {
 
     // Skips rendering on every x walls for performance
     // for (int i = 0; i < SCREEN_WIDTH; i += RENDERER_COL_SKIP) {
-    //     float ray_angle = player.angle + (i * FOV_RADS / SCREEN_WIDTH) - (FOV_RADS / 2);
-        
-    //     ray.v.x = cosf(ray_angle);
-    //     ray.v.y = sinf(ray_angle);
-    //     ray.v = norm(ray.v);
         
     //     float theta = atan2f(cross(reference_vec, ray.v), dot(reference_vec, ray.v));
-    //     float closest_distance = -1.0;
-
-    screenspace_segment* active_segments = null;
-    int num_active_segments = 0; 
+    
+    screenspace_segment* visible_segments = NULL;
+    int num_visible_segments = 0; 
     while (sweep_curs) {
+        
+        float closest_distance = -1.0;
+        dll* next_curs = NULL;
+        endpoint* new_visible_segment_ccw_endpoint = NULL;
+        endpoint* data = (endpoint*) sweep_curs->data;
+        
+        // Remove endpoints from "active" list behind cursor when they end
+        if (data->is_end) {
 
-        // Only consider a segment as a rendering target if the sweepline has passed its "start" endpoint
-        while (sweep_curs && sweep_curs->sorting_factor < theta) {
+            if (closest_wall == data->segment) {
+                closest_wall = NULL;
+            }
 
-            endpoint* data = (endpoint*) sweep_curs->data;
-            
-            // Remove endpoints from "active" list behind cursor when they end
-            if (data->is_end) {
+            dll* next = data->adjacent->next;
+            dll* prev = data->adjacent->prev;
 
-                if (closest_wall == data->segment) {
-                    closest_wall = NULL;
-                }
+            if (next) next->prev = prev;
+            if (prev) prev->next = next;
+            else root = next;
 
-                dll* next = data->adjacent->next;
-                dll* prev = data->adjacent->prev;
+            free(data->adjacent->data);
+            free(data->adjacent);
 
-                if (next) next->prev = prev;
-                if (prev) prev->next = next;
-                else root = next;
+            next = sweep_curs->next;
+            prev = sweep_curs->prev;
 
-                free(data->adjacent->data);
-                free(data->adjacent);
+            if (next) next->prev = prev;
+            if (prev) prev->next = next;
+            else root = next;
 
-                next = sweep_curs->next;
-                prev = sweep_curs->prev;
+            if (!next && !prev) root = NULL;
 
-                if (next) next->prev = prev;
-                if (prev) prev->next = next;
-                else root = next;
+            free(sweep_curs->data);
+            free(sweep_curs);
 
-                if (!next && !prev) root = NULL;
+            next_curs = next;
 
-                free(sweep_curs->data);
-                free(sweep_curs);
+            if (!closest_wall)
+            {
+                float ray_angle = player.angle + sweep_curs->sorting_factor;
+                ray.v.x = cosf(ray_angle);
+                ray.v.y = sinf(ray_angle);
+                ray.v = norm(ray.v);
 
-                sweep_curs = next;
-
-            } else {
-                // Check if newly encountered segment is closer than the previous closest active segment, if so update
-                if (closest_wall) {
+                // Find the closest wall from the "Active" segment list behind the sweep cursor.
+                // As segments are non-intersecting, we only need to check intersection with this "closest" segment for future rays
+                // until this segment ends, or a new one begins, triggering this segment to be recalculated.
+                curs = root;
+                while (curs && curs != sweep_curs) {
+                    endpoint* e = (endpoint*) curs->data;
+                    segment* s = e->segment;
+                    curs = curs->next;
                     bool hit = false;
-                    float hit_distance_new = raycast(ray.u, ray.v, *(data->segment), &hit);
-                    if (hit) {
-                        float hit_distance_current = raycast(ray.u, ray.v, *closest_wall, &hit);
-                        if (hit_distance_new < hit_distance_current) {
-                            closest_wall = data->segment;
-                            closest_distance = hit_distance_new;
-                        }
+                    float hit_distance = raycast(ray.u, ray.v, *s, &hit);
+                    if (!hit) continue;
+                    
+                    if (closest_distance < 0 || hit_distance < closest_distance) {
+                        closest_distance = hit_distance;
+                        closest_wall = s;
+                        new_visible_segment_ccw_endpoint = e;
                     }
                 }
-
-                sweep_curs = sweep_curs->next;
             }
-        }
 
-        if (!closest_wall) {
+        } else {
+            // Check if newly encountered segment is closer than the previous closest active segment, if so update
+            if (closest_wall) {
+                float ray_angle = player.angle + sweep_curs->sorting_factor;
+                ray.v.x = cosf(ray_angle);
+                ray.v.y = sinf(ray_angle);
+                ray.v = norm(ray.v);
 
-            // Find the closest wall from the "Active" segment list behind the sweep cursor.
-            // As segments are non-intersecting, we only need to check intersection with this "closest" segment for future rays
-            // until this segment ends, or a new one begins, triggering this segment to be recalculated.
-            curs = root;
-            while (curs && curs != sweep_curs) {
-                endpoint* e = (endpoint*) curs->data;
-                segment* s = e->segment;
-                curs = curs->next;
                 bool hit = false;
-                float hit_distance = raycast(ray.u, ray.v, *s, &hit);
-                if (!hit) continue;
-                
-                if (closest_distance < 0 || hit_distance < closest_distance) {
-                    closest_distance = hit_distance;
-                    closest_wall = s;
+                float hit_distance_new = raycast(ray.u, ray.v, *(data->segment), &hit);
+                if (hit) {
+                    float hit_distance_current = raycast(ray.u, ray.v, *closest_wall, &hit);
+                    if (hit_distance_new < hit_distance_current) {
+                        closest_wall = data->segment;
+                        closest_distance = hit_distance_new;
+                        new_visible_segment_ccw_endpoint = data;
+                    }
                 }
             }
-
-            // TODO: Convert ray angle to screenspace x coord
-            active_segments = realloc(active_segments, sizeof(screenspace_segment) * (num_active_segments + 1));
-            active_segments[num_active_segments] = (screenspace_segment) {closest_wall, }
-            num_active_segments
-
-        }
-        
-        depth_buf_info info = {MAX_VIEW_DIST, 0, 0, 0};
-        
-        // If there is a wall for the ray to hit.
-        if (closest_wall) {
-
-            // use precomputed value from getting closest wall if available
-            if (closest_distance < 0) {
-                closest_distance = raycast(ray.u, ray.v, *closest_wall, NULL);
+            else
+            {
+                closest_wall = data->segment;
+                new_visible_segment_ccw_endpoint = data;
             }
-            
-            // Draws lines at the edges of walls
-            vec2 hit_pt = { ray.u.x + ray.v.x * closest_distance, ray.u.y + ray.v.y * closest_distance };
+
+            next_curs = sweep_curs->next;
+        }
+
+        if (new_visible_segment_ccw_endpoint) {
+
+          
+            // TODO add a null wall. i.e. no wall active here
+
+            // When a wall becomes "Visible", we calculate the horizontal pixel where it starts being visible,
+            // aswell as the horizontal pixel that each of its endpoints is located. Note that these pixels may be
+            // off the screen, and are primarily for keeping scale of wall textures.
+            int screenspace_visible_l_idx = SCREEN_WIDTH * (sweep_curs->sorting_factor + FOV_RADS_HALF) / FOV_RADS;
+            printf("sort factor %f lidx %d\n", sweep_curs->sorting_factor, screenspace_visible_l_idx);
+            int screenspace_u_idx = SCREEN_WIDTH * (new_visible_segment_ccw_endpoint->rads_from_player_vec + FOV_RADS_HALF) / FOV_RADS;
+            int screenspace_v_idx = SCREEN_WIDTH * (new_visible_segment_ccw_endpoint->adjacent_rads_from_player_vec + FOV_RADS_HALF) / FOV_RADS;
+
+            // if (closest_distance < 0) {
+            //     closest_distance = raycast(ray.u, ray.v, *closest_wall, NULL);
+            // }
+
+            float u_dist = 1 / inv_sqrt(dist2(player.pos, closest_wall->u));
+            float v_dist = 1 / inv_sqrt(dist2(player.pos, closest_wall->v));
             int wall_len = 1 / inv_sqrt(dist2(closest_wall->u, closest_wall->v));
-            int wall2pt = 1 / inv_sqrt(dist2(closest_wall->u, hit_pt));
+            float player_dist = 1 / inv_sqrt(point_ray_dist2(player.pos, *closest_wall));
             
-            #ifdef RENDER_DEBUG
-            segment s = { ray.u, hit_pt };
-            bresenham_line(s, 70);
-            #endif
-            
-            info.depth = closest_distance;
-            info.tex = closest_wall->tex;
-            info.wall_len = wall_len;
-            info.length = 1000 / info.depth;
-            info.wall2pt = wall2pt;
+            // // Draws lines at the edges of walls
+            // vec2 hit_pt = { ray.u.x + ray.v.x * closest_distance, ray.u.y + ray.v.y * closest_distance };
+            // int wall2pt = 1 / inv_sqrt(dist2(closest_wall->u, hit_pt));
+            visible_segments = realloc(visible_segments, sizeof(screenspace_segment) * (num_visible_segments + 1));
+            visible_segments[num_visible_segments++] = (screenspace_segment) {closest_wall, screenspace_visible_l_idx, screenspace_u_idx, screenspace_v_idx, u_dist, v_dist, wall_len, player_dist};
+        }
+
+        sweep_curs = next_curs;
+    }
+
+    // Stores the depth at each pixel and the phase of the wall it hit for occlusion later
+    depth_buf_info depth_buf[SCREEN_WIDTH];
+    int visible_segment_curs = 0;
+    float cur_interpolation_factor = 0;
+    float cur_interpolation_step = 0;
+    screenspace_segment* cur_visible_segment = NULL; 
+    printf("num vis %d\n", num_visible_segments);
+    for (int i = 0; i < SCREEN_WIDTH; i++)
+    {
+        while (visible_segment_curs + 1 < num_visible_segments && visible_segments[visible_segment_curs + 1].screenspace_visible_l_idx < i)
+        {
+            visible_segment_curs++;
+            cur_visible_segment = NULL;
         }
         
-        for (int j = i; j < SCREEN_WIDTH && j < i + RENDERER_COL_SKIP; j++)
+        if (!cur_visible_segment && num_visible_segments > 0)
         {
-            depth_buf[j] = info;
+            cur_visible_segment = &visible_segments[visible_segment_curs];
+            if (abs(cur_visible_segment->screenspace_v_idx - cur_visible_segment->screenspace_u_idx) == 0)
+            {
+                cur_interpolation_factor = 1;
+                cur_interpolation_step = 0;
+            }
+            else
+            {
+                cur_interpolation_factor = abs(i - cur_visible_segment->screenspace_u_idx) / (float) abs(cur_visible_segment->screenspace_v_idx - cur_visible_segment->screenspace_u_idx);
+                cur_interpolation_step = (abs(i + 1 - cur_visible_segment->screenspace_u_idx) / (float) abs(cur_visible_segment->screenspace_v_idx - cur_visible_segment->screenspace_u_idx)) - cur_interpolation_factor;
+            }
         }
+        else
+        {
+            cur_interpolation_factor += cur_interpolation_step;
+        }
+
+        depth_buf_info info = {MAX_VIEW_DIST, 0, 0, 0};
+            
+        if (cur_visible_segment)
+        {
+            info.depth = cur_visible_segment->player_dist;// + (cur_interpolation_factor * (cur_visible_segment->v_dist - cur_visible_segment->u_dist));
+            info.tex = CHECK; // fix wall text assignment
+            info.wall_len = cur_visible_segment->segment_length;
+            info.length = 1000 / info.depth;
+            info.wall2pt = cur_visible_segment->segment_length * cur_interpolation_factor;
+        }
+
+        depth_buf[i] = info;
     }
+    
+    // If there is a wall for the ray to hit.
+    // if (closest_wall) {
+
+    //     // use precomputed value from getting closest wall if available
+    //     if (closest_distance < 0) {
+    //         closest_distance = raycast(ray.u, ray.v, *closest_wall, NULL);
+    //     }
+        
+    //     // Draws lines at the edges of walls
+    //     vec2 hit_pt = { ray.u.x + ray.v.x * closest_distance, ray.u.y + ray.v.y * closest_distance };
+    //     int wall_len = 1 / inv_sqrt(dist2(closest_wall->u, closest_wall->v));
+    //     int wall2pt = 1 / inv_sqrt(dist2(closest_wall->u, hit_pt));
+        
+    //     #ifdef RENDER_DEBUG
+    //     segment s = { ray.u, hit_pt };
+    //     bresenham_line(s, 70);
+    //     #endif
+        
+    //     info.depth = closest_distance;
+    //     info.tex = closest_wall->tex;
+    //     info.wall_len = wall_len;
+    //     info.length = 1000 / info.depth;
+    //     info.wall2pt = wall2pt;
+    // }
+    
+    // for (int j = i; j < SCREEN_WIDTH && j < i + RENDERER_COL_SKIP; j++)
+    // {
+    //     depth_buf[j] = info;
+    // }
 
     int last_real_idx = 0;
     int next_real_idx = 0;
     for (int i = 0; i < SCREEN_WIDTH; i+=2)
     {
         depth_buf_info info = depth_buf[i];
-        if (i % RENDERER_COL_SKIP == 0)
-        {
-            last_real_idx = i;
-            next_real_idx = MIN(last_real_idx + RENDERER_COL_SKIP, SCREEN_WIDTH - 1);
-        }
+        // if (i % RENDERER_COL_SKIP == 0)
+        // {
+        //     last_real_idx = i;
+        //     next_real_idx = MIN(last_real_idx + RENDERER_COL_SKIP, SCREEN_WIDTH - 1);
+        // }
 
-        if (last_real_idx != i)
-        {
-            float interpolation_factor = (i - last_real_idx) / (float) RENDERER_COL_SKIP;
-            info.length = depth_buf[last_real_idx].length + (depth_buf[next_real_idx].length - depth_buf[last_real_idx].length) * interpolation_factor;
-            info.wall2pt = depth_buf[last_real_idx].wall2pt + (depth_buf[next_real_idx].wall2pt - depth_buf[last_real_idx].wall2pt) * interpolation_factor;
-        }
+        // if (last_real_idx != i)
+        // {
+        //     float interpolation_factor = (i - last_real_idx) / (float) RENDERER_COL_SKIP;
+        //     info.length = depth_buf[last_real_idx].length + (depth_buf[next_real_idx].length - depth_buf[last_real_idx].length) * interpolation_factor;
+        //     info.wall2pt = depth_buf[last_real_idx].wall2pt + (depth_buf[next_real_idx].wall2pt - depth_buf[last_real_idx].wall2pt) * interpolation_factor;
+        // }
 
         draw_wall_from_depth_buf(info, i);
     }
@@ -587,6 +666,8 @@ void render_map(bool is_shooting) {
         free(val->data);
         free(val);
     }
+
+    free(visible_segments);
     
     render_obj* objects = NULL;
     int n_objects = 0;

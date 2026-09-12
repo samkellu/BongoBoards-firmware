@@ -72,6 +72,7 @@ static const int COLLISION_DIST2        = COLLISION_DIST * COLLISION_DIST;
 static const int ENEMY_VISION_RANGE2    = ENEMY_VISION_RANGE * ENEMY_VISION_RANGE;
 static const float ROTATION_SPEED_RADS  = ROTATION_SPEED * PI / 180.0f;
 static const float FOV_RADS             = FOV * PI / 180.0f;
+static const float FOV_RADS_HALF        = FOV_RADS / 2.0f;
 static const float FRAME_TIME_MILLI     = 1000 / TARGET_FPS;
 static const float TANF_HALF_FOV_RADS   = tanf((FOV * PI / 180.0f)/2);
 static const int GUN_X                  = SCREEN_WIDTH / 2;
@@ -151,9 +152,14 @@ typedef struct depth_buf_info {
 } depth_buf_info;
 
 typedef struct screenspace_segment {
-  segment s;
-  int screenspace_l_idx;
-  int screenspace_r_idx;
+  segment* s;
+  int screenspace_visible_l_idx;
+  int screenspace_u_idx;
+  int screenspace_v_idx;
+  float u_dist;
+  float v_dist;
+  int segment_length;
+  float player_dist;
 } screenspace_segment;
 
 typedef struct render_obj {
@@ -463,6 +469,8 @@ typedef struct endpoint {
     segment* segment;
     struct dll* adjacent;
     bool is_end;
+    float rads_from_player_vec;
+    float adjacent_rads_from_player_vec;
 } endpoint;
 
 typedef struct dll {
