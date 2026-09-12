@@ -84,7 +84,7 @@ typedef struct vec2 {
 
 typedef enum wall_tex {
   CHECK,
-  LINES,
+  // LINES,
   DOOR,
 } wall_tex;
 

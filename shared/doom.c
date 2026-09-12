@@ -356,13 +356,23 @@ void render_map(bool is_shooting) {
         // Check if either endpoint lies in fov cone
         bool u_in_fov = point_lies_in_cone(cone_l, cone_r, wall.u);
         bool v_in_fov = point_lies_in_cone(cone_l, cone_r, wall.v);
-        relevant = u_in_fov || v_in_fov;
+
+        bool v_in_neg_fov = false;
+        bool u_in_neg_fov = false;
+        u_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.u);
+        v_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.v);
 
         // If not check if it fully intersects the cone
-        if (!relevant) raycast(player.pos, reference_vec, wall, &relevant);
+        if ((!u_in_fov && !v_in_fov) || u_in_neg_fov || v_in_neg_fov)
+        {
+            continue;
 
-        // If wall doesn't intersect the FOV cone at all, skip it
-        if (!relevant) continue;
+            //     // TODO HERE REMOVING RAYCAST...
+            // // If wall doesn't intersect the FOV cone at all, skip it
+            // if (u_in_neg_fov || v_in_neg_fov) continue;
+            // if (!u_in_neg_fov && u_neg_fov) continue;
+        }
+
         
         // Get angle of each endpoint relative to player's view direction (sort key for sweepline algorithm)
         vec2 point_vec = sub(wall.u, player.pos);
@@ -375,13 +385,13 @@ void render_map(bool is_shooting) {
         // as far as the sweepline is concerned. By checking the specific case and side of p which the wall lies on, we can alleviate this issue.
         if ((theta_u < 0) != (theta_v < 0) && u_in_fov != v_in_fov) {
             if (u_in_fov) {
-                bool v_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.v);
+                v_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.v);
                 if (v_in_neg_fov) {
                     bool wall_intersects_side_cone = (wall.v.x - wall.u.x) * (player.pos.y - wall.u.y) < (wall.v.y - wall.u.y) * (player.pos.x - wall.u.x);
                     theta_v += (wall_intersects_side_cone ? -1 : 1) * 2 * PI;
                 }
             } else {
-                bool u_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.u);
+                u_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.u);
                 if (u_in_neg_fov) {
                     bool wall_intersects_side_cone = (wall.v.x - wall.u.x) * (player.pos.y - wall.u.y) < (wall.v.y - wall.u.y) * (player.pos.x - wall.u.x);
                     theta_u += (wall_intersects_side_cone ? 1 : -1) * 2 * PI;
@@ -416,6 +426,8 @@ void render_map(bool is_shooting) {
         v_node->prev = curs;
         curs = curs->next;
     }
+
+    printf("raycast during dll construction: %d\n", raycast_calls);
 
     #ifdef RENDER_DEBUG
         render_debug(root, cone_l, cone_r);
@@ -516,7 +528,7 @@ void render_map(bool is_shooting) {
             }
         }
         
-        depth_buf_info info = {MAX_VIEW_DIST, 0, 0, 0};
+        depth_buf_info info = {MAX_VIEW_DIST, 0, 0, 0, CHECK};
         
         // If there is a wall for the ray to hit.
         if (closest_wall) {
@@ -551,7 +563,7 @@ void render_map(bool is_shooting) {
     }
 
     int last_real_idx = 0;
-    for (int i = 0; i < SCREEN_WIDTH; i+=2)
+    for (int i = 0; i < SCREEN_WIDTH; i+=RENDERER_COL_SKIP)
     {
         depth_buf_info info = depth_buf[i];
         if (i % RENDERER_COL_SKIP == 0)
@@ -568,6 +580,7 @@ void render_map(bool is_shooting) {
 
         draw_wall_from_depth_buf(info, i);
     }
+
 
     // dealloc segment list
     while (root) {
@@ -1174,15 +1187,17 @@ void doom_update(controls c) {
             oled_write_P(PSTR("KEY REQUIRED"), false);
         }
     }
-
+    
+    time_elapsed = timer_elapsed32(last_frame);
+    int fpms = 1000 / (float) time_elapsed;
+    oled_set_cursor(0, 1);
+    oled_write("FPS:", false);
+    oled_write(get_u16_str(fpms, ' '), false);
     #ifdef RENDER_DEBUG
-        time_elapsed = timer_elapsed32(last_frame);
-        int fpms = 1000 / (float) time_elapsed;
-        oled_set_cursor(0, 1);
-        oled_write("FPS:", false);
-        oled_write(get_u16_str(fpms, ' '), false);
         oled_write("num raycast calls:", false);
         oled_write(get_u16_str(raycast_calls, ' '), false);
+        oled_write("num walls:", false);
+        oled_write(get_u16_str(num_walls, ' '), false);
         
         render();
         last_frame = timer_read();
