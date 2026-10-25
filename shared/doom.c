@@ -23,6 +23,8 @@ static player_info player;
 static uint32_t game_time;
 static uint16_t last_frame;
 static bool initialized = false;
+static int frames_since_dll_processed = RENDERER_FRAME_SKIP + 1;
+static dll* dll_root = NULL;
 
 // Gun animation
 static int gun_x = GUN_X;
@@ -296,7 +298,7 @@ dll* merge_sort_dll(dll* root) {
     dll* right = merge_sort_dll(r_root);
 
     // Merge
-    dll new_root = {NULL, NULL, NULL, -1.0};
+    dll new_root = {NULL, NULL, NULL, NULL, NULL, -1.0};
     dll* curs = &new_root;
     while (left || right) {
         if (left && (!right || left->sorting_factor < right->sorting_factor)) {
@@ -316,68 +318,50 @@ dll* merge_sort_dll(dll* root) {
     return new_root.next;
 }
 
-void restore_dll(dll* root) {
-    dll* curs = root;
+void restore_dll(void) {
+    dll* curs = dll_root;
     while (curs)
     {
         curs->next = curs->next_snapshot;
         curs->prev = curs->prev_snapshot;
-        curs = curs->next;
+        curs = curs->next_snapshot;
+        printf("restore");
     }
 }
 
-void dll_take_snapshot(dll* root) {
-    dll* curs = root;
+void dll_take_snapshot(void) {
+    dll* curs = dll_root;
     while (curs)
     {
         curs->next_snapshot = curs->next;
         curs->prev_snapshot = curs->prev;
-        curs = curs.next;
+        curs = curs->next;
+        printf("snap");
     }
 }
 
-void free_dll(dll* root) {
-    dll* curs = root;
-    while (curs)
+void free_dll(void) {
+    while (dll_root)
     {
-        free(curs.data);
-        free(curs.prev);
-        if (!curs.next) free(curs);
-        curs = curs.next;
+        free(dll_root->data);
+        free(dll_root->prev);
+        if (!dll_root->next) 
+        {
+            free(dll_root);
+            dll_root = NULL;
+            return;
+        }
+
+        dll_root = dll_root->next;
+        printf("free");
     }
 }
 
-
-// 2.5D raycast renderer for the map and entities around the player
-void render_map(bool is_shooting) {
-
-    #ifdef DS_DEBUG
-        printf("\n\n=================== BEGIN FRAME ======================\n\n");
-    #endif
-
-    #ifdef RENDER_DEBUG
-        raycast_calls = 0;
-    #endif
-
-    // Construct the left and right bounds of the FOV cone
-    // segment cone_l = {player.pos, {0, 0}};
-    // float bound_angle = player.angle - FOV_RADS_HALF;
-    // cone_l.v.x = player.pos.x + DOV * cosf(bound_angle);
-    // cone_l.v.y = player.pos.y + DOV * sinf(bound_angle);
-
-    // segment cone_r = {player.pos, {0, 0}};
-    // bound_angle = player.angle + FOV_RADS_HALF;
-    // cone_r.v.x = player.pos.x + DOV * cosf(bound_angle);
-    // cone_r.v.y = player.pos.y + DOV * sinf(bound_angle);
-    
-    // Stores the depth at each pixel and the phase of the wall it hit for occlusion later
-    depth_buf_info depth_buf[SCREEN_WIDTH];
-    segment ray = {player.pos, {0, 0}};
-
-    dll* root = NULL;
+void construct_dll(vec2 reference_vec)
+{
+    dll_root = NULL;
     dll* curs = NULL;
 
-    vec2 reference_vec = {cosf(player.angle), sinf(player.angle)};
     for (int i = 0; i < num_walls; i++) {
         segment wall = walls[i];
 
@@ -436,28 +420,62 @@ void render_map(bool is_shooting) {
         *u_point = (endpoint) {&walls[i], NULL, u_is_end};
 
         dll* u_node = (dll*) malloc(sizeof(dll));
-        *u_node = (dll) {u_point, NULL, NULL, theta_u};
+        *u_node = (dll) {u_point, NULL, NULL, NULL, NULL, theta_u};
         if (curs) {
             curs->next = u_node;
             u_node->prev = curs;
             curs = curs->next;
         } else {
             curs = u_node;
-            root = u_node;
+            dll_root = u_node;
         }
         
         endpoint* v_point = (endpoint*) malloc(sizeof(endpoint));
         *v_point = (endpoint) {&walls[i], u_node, !u_is_end};
         
         dll* v_node = (dll*) malloc(sizeof(dll));
-        *v_node = (dll) {v_point, NULL, curs, theta_v};
+        *v_node = (dll) {v_point, NULL, curs, NULL, NULL, theta_v};
         u_point->adjacent = v_node;
         curs->next = v_node;
         v_node->prev = curs;
         curs = curs->next;
     }
+    
+    // Sort endpoints in clockwise order across the FOV cone
+    dll_root = merge_sort_dll(dll_root);
+    dll_take_snapshot();
+}
+
+
+// 2.5D raycast renderer for the map and entities around the player
+void render_map(bool is_shooting) {
+
+    #ifdef DS_DEBUG
+        printf("\n\n=================== BEGIN FRAME ======================\n\n");
+    #endif
+
+    #ifdef RENDER_DEBUG
+        raycast_calls = 0;
+    #endif
 
     
+    // Stores the depth at each pixel and the phase of the wall it hit for occlusion later
+    depth_buf_info depth_buf[SCREEN_WIDTH];
+    segment ray = {player.pos, {0, 0}};
+    vec2 reference_vec = {cosf(player.angle), sinf(player.angle)};
+
+    if (frames_since_dll_processed++ > RENDERER_FRAME_SKIP)
+    {
+        printf("refresh");
+        frames_since_dll_processed = 0;
+        free_dll();
+        construct_dll(reference_vec);
+    }
+    else
+    {
+        restore_dll();
+    }
+
     #ifdef RENDER_DEBUG
         // Construct the left and right bounds of the FOV cone
         segment cone_l = {player.pos, {0, 0}};
@@ -470,18 +488,15 @@ void render_map(bool is_shooting) {
         cone_r.v.x = player.pos.x + DOV * cosf(bound_angle);
         cone_r.v.y = player.pos.y + DOV * sinf(bound_angle);
         printf("raycast during dll construction: %d\n", raycast_calls);
-        render_debug(root, cone_l, cone_r);
+        render_debug(dll_root, cone_l, cone_r);
     #endif
     
-    // Sort endpoints in clockwise order across the FOV cone
-    root = merge_sort_dll(root);
-    dll_take_snapshot(root);
+    dll* root = dll_root;
     dll* sweep_curs = root;
-
     segment* closest_wall = NULL;
 
     #ifdef DS_DEBUG
-        print_dll(root);
+        print_dll(dll_root);
     #endif
 
     // Skips rendering on every x walls for performance
@@ -514,8 +529,8 @@ void render_map(bool is_shooting) {
                 if (prev) prev->next = next;
                 else root = next;
 
-                free(data->adjacent->data);
-                free(data->adjacent);
+                // free(data->adjacent->data);
+                // free(data->adjacent);
 
                 next = sweep_curs->next;
                 prev = sweep_curs->prev;
@@ -526,8 +541,8 @@ void render_map(bool is_shooting) {
 
                 if (!next && !prev) root = NULL;
 
-                free(sweep_curs->data);
-                free(sweep_curs);
+                // free(sweep_curs->data);
+                // free(sweep_curs);
 
                 sweep_curs = next;
 
@@ -554,7 +569,7 @@ void render_map(bool is_shooting) {
             // Find the closest wall from the "Active" segment list behind the sweep cursor.
             // As segments are non-intersecting, we only need to check intersection with this "closest" segment for future rays
             // until this segment ends, or a new one begins, triggering this segment to be recalculated.
-            curs = root;
+            dll* curs = root;
             while (curs && curs != sweep_curs) {
                 endpoint* e = (endpoint*) curs->data;
                 segment* s = e->segment;
@@ -624,13 +639,13 @@ void render_map(bool is_shooting) {
     }
 
 
-    // dealloc segment list
-    while (root) {
-        dll* val = root;
-        root = root->next;
-        free(val->data);
-        free(val);
-    }
+    // // dealloc segment list
+    // while (root) {
+    //     dll* val = root;
+    //     root = root->next;
+    //     free(val->data);
+    //     free(val);
+    // }
     
     render_obj* objects = NULL;
     int n_objects = 0;

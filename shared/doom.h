@@ -56,6 +56,7 @@
 #define MAX_VIEW_DIST         100000.0f
 #define UI_HEIGHT             54
 #define RENDERER_COL_SKIP     2
+#define RENDERER_FRAME_SKIP   5
 
 // MAP GEN
 #define WALL_OFFSET           27
@@ -465,7 +466,7 @@ typedef struct dll {
     void* data;
     struct dll* next;
     struct dll* prev;
-    struct dll* prev_snapshot;
+    struct dll* next_snapshot;
     struct dll* prev_snapshot;
     float sorting_factor;
 } dll;
@@ -526,6 +527,16 @@ vec2 get_valid_spawn(void);
 const char* get_u32_str(uint32_t value, char pad);
 
 segment* bsp_wallgen(segment* walls, int* num_walls, int l, int r, int t, int b, int depth);
+
+dll* merge_sort_dll(dll* root);
+
+void restore_dll(void);
+
+void dll_take_snapshot(void);
+
+void free_dll(void);
+
+void construct_dll(vec2 reference_vec);
 
 
 #ifdef RENDER_DEBUG
