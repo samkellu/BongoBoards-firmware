@@ -316,37 +316,6 @@ dll* merge_sort_dll(dll* root) {
     return new_root.next;
 }
 
-void restore_dll(dll* root) {
-    dll* curs = root;
-    while (curs)
-    {
-        curs->next = curs->next_snapshot;
-        curs->prev = curs->prev_snapshot;
-        curs = curs->next;
-    }
-}
-
-void dll_take_snapshot(dll* root) {
-    dll* curs = root;
-    while (curs)
-    {
-        curs->next_snapshot = curs->next;
-        curs->prev_snapshot = curs->prev;
-        curs = curs.next;
-    }
-}
-
-void free_dll(dll* root) {
-    dll* curs = root;
-    while (curs)
-    {
-        free(curs.data);
-        free(curs.prev);
-        if (!curs.next) free(curs);
-        curs = curs.next;
-    }
-}
-
 
 // 2.5D raycast renderer for the map and entities around the player
 void render_map(bool is_shooting) {
@@ -475,7 +444,6 @@ void render_map(bool is_shooting) {
     
     // Sort endpoints in clockwise order across the FOV cone
     root = merge_sort_dll(root);
-    dll_take_snapshot(root);
     dll* sweep_curs = root;
 
     segment* closest_wall = NULL;

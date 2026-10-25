@@ -465,8 +465,6 @@ typedef struct dll {
     void* data;
     struct dll* next;
     struct dll* prev;
-    struct dll* prev_snapshot;
-    struct dll* prev_snapshot;
     float sorting_factor;
 } dll;
 
