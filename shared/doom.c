@@ -75,6 +75,10 @@ vec2 proj(vec2 u, vec2 v) {
     return (vec2) {t * v.x, t * v.y};
 }
 
+bool sign(float f) {
+    return f >= 0;
+}
+
 float point_ray_dist2(vec2 p, segment s) {
 
     vec2 up = sub(p, s.u);
@@ -285,7 +289,6 @@ dll* merge_sort_dll(dll* root) {
         }
     }
 
-
     dll* r_root = slow_ptr->next;
     slow_ptr->next = NULL;
 
@@ -313,6 +316,38 @@ dll* merge_sort_dll(dll* root) {
     return new_root.next;
 }
 
+void restore_dll(dll* root) {
+    dll* curs = root;
+    while (curs)
+    {
+        curs->next = curs->next_snapshot;
+        curs->prev = curs->prev_snapshot;
+        curs = curs->next;
+    }
+}
+
+void dll_take_snapshot(dll* root) {
+    dll* curs = root;
+    while (curs)
+    {
+        curs->next_snapshot = curs->next;
+        curs->prev_snapshot = curs->prev;
+        curs = curs.next;
+    }
+}
+
+void free_dll(dll* root) {
+    dll* curs = root;
+    while (curs)
+    {
+        free(curs.data);
+        free(curs.prev);
+        if (!curs.next) free(curs);
+        curs = curs.next;
+    }
+}
+
+
 // 2.5D raycast renderer for the map and entities around the player
 void render_map(bool is_shooting) {
 
@@ -325,15 +360,15 @@ void render_map(bool is_shooting) {
     #endif
 
     // Construct the left and right bounds of the FOV cone
-    segment cone_l = {player.pos, {0, 0}};
-    float bound_angle = player.angle - FOV_RADS / 2;
-    cone_l.v.x = player.pos.x + DOV * cosf(bound_angle);
-    cone_l.v.y = player.pos.y + DOV * sinf(bound_angle);
+    // segment cone_l = {player.pos, {0, 0}};
+    // float bound_angle = player.angle - FOV_RADS_HALF;
+    // cone_l.v.x = player.pos.x + DOV * cosf(bound_angle);
+    // cone_l.v.y = player.pos.y + DOV * sinf(bound_angle);
 
-    segment cone_r = {player.pos, {0, 0}};
-    bound_angle = player.angle + FOV_RADS / 2;
-    cone_r.v.x = player.pos.x + DOV * cosf(bound_angle);
-    cone_r.v.y = player.pos.y + DOV * sinf(bound_angle);
+    // segment cone_r = {player.pos, {0, 0}};
+    // bound_angle = player.angle + FOV_RADS_HALF;
+    // cone_r.v.x = player.pos.x + DOV * cosf(bound_angle);
+    // cone_r.v.y = player.pos.y + DOV * sinf(bound_angle);
     
     // Stores the depth at each pixel and the phase of the wall it hit for occlusion later
     depth_buf_info depth_buf[SCREEN_WIDTH];
@@ -342,37 +377,27 @@ void render_map(bool is_shooting) {
     dll* root = NULL;
     dll* curs = NULL;
 
-    // bounds for the reverse of the fov cone, used for special case
-    vec2 cone_r_dir = sub(cone_r.v, player.pos);
-    segment neg_cone_r = {player.pos, sub(player.pos, cone_r_dir)};
-    vec2 cone_l_dir = sub(cone_l.v, player.pos);
-    segment neg_cone_l = {player.pos, sub(player.pos, cone_l_dir)};
-
     vec2 reference_vec = {cosf(player.angle), sinf(player.angle)};
     for (int i = 0; i < num_walls; i++) {
         segment wall = walls[i];
-        bool relevant = false;
 
-        // Check if either endpoint lies in fov cone
-        bool u_in_fov = point_lies_in_cone(cone_l, cone_r, wall.u);
-        bool v_in_fov = point_lies_in_cone(cone_l, cone_r, wall.v);
+        // if (!relevant)
+        // {
+        //     // Check if either endpoint lies in fov cone. Skip if not
+        //     bool u_in_fov = point_lies_in_cone(cone_l, cone_r, wall.u);
+        //     bool v_in_fov = point_lies_in_cone(cone_l, cone_r, wall.v);
+        //     if (!u_in_fov && !v_in_fov) continue;
 
-        bool v_in_neg_fov = false;
-        bool u_in_neg_fov = false;
-        u_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.u);
-        v_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.v);
-
-        // If not check if it fully intersects the cone
-        if ((!u_in_fov && !v_in_fov) || u_in_neg_fov || v_in_neg_fov)
-        {
-            continue;
-
-            //     // TODO HERE REMOVING RAYCAST...
-            // // If wall doesn't intersect the FOV cone at all, skip it
-            // if (u_in_neg_fov || v_in_neg_fov) continue;
-            // if (!u_in_neg_fov && u_neg_fov) continue;
-        }
-
+        //     // Check for special case.
+        //     // When walls have an endpoint behind the player and on the opposite side of the reference vector,
+        //     // the incorrect endpoint may be calculated as the "start" and "end". We alleviate this issue by counting 
+        //     // the endpoint's angle relative to the ref vector beyond +-PI.
+        //     // Note that this can only occur if the wall has exactly one endpoint in the fov cone.
+        //     if (u_in_fov != v_in_fov) {
+        //         vec2 neg_reference_vec = sub((vec2){0,0}, reference_vec);
+        //         raycast(player.pos, neg_reference_vec, wall, &intersects_neg_ref_vec);
+        //     }
+        // }
         
         // Get angle of each endpoint relative to player's view direction (sort key for sweepline algorithm)
         vec2 point_vec = sub(wall.u, player.pos);
@@ -381,22 +406,27 @@ void render_map(bool is_shooting) {
         point_vec = sub(wall.v, player.pos);
         float theta_v = atan2f(cross(reference_vec, point_vec), dot(point_vec, reference_vec));
 
-        // When walls have an endpoint behind the player, the incorrect endpoint may be calculated as the "start" and "end" 
-        // as far as the sweepline is concerned. By checking the specific case and side of p which the wall lies on, we can alleviate this issue.
-        if ((theta_u < 0) != (theta_v < 0) && u_in_fov != v_in_fov) {
-            if (u_in_fov) {
-                v_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.v);
-                if (v_in_neg_fov) {
-                    bool wall_intersects_side_cone = (wall.v.x - wall.u.x) * (player.pos.y - wall.u.y) < (wall.v.y - wall.u.y) * (player.pos.x - wall.u.x);
-                    theta_v += (wall_intersects_side_cone ? -1 : 1) * 2 * PI;
-                }
-            } else {
-                u_in_neg_fov = point_lies_in_cone(neg_cone_l, neg_cone_r, wall.u);
-                if (u_in_neg_fov) {
-                    bool wall_intersects_side_cone = (wall.v.x - wall.u.x) * (player.pos.y - wall.u.y) < (wall.v.y - wall.u.y) * (player.pos.x - wall.u.x);
-                    theta_u += (wall_intersects_side_cone ? 1 : -1) * 2 * PI;
-                }
-            }
+        bool u_in_fov = theta_u > -FOV_RADS_HALF && theta_u < FOV_RADS_HALF;
+        bool v_in_fov = theta_v > -FOV_RADS_HALF && theta_v < FOV_RADS_HALF;
+
+        float diff = theta_u - theta_v;
+        diff = sign(diff) ? diff : -diff;
+
+        // Skip if the wall does not intersect the fov cone
+        if (!u_in_fov && !v_in_fov && (diff > PI || sign(theta_u) == sign(theta_v)))
+            continue;
+
+        // Check for special case.
+        // When walls have an endpoint behind the player and on the opposite side of the reference vector,
+        // the incorrect endpoint may be calculated as the "start" and "end". We alleviate this issue by counting 
+        // the endpoint's angle relative to the ref vector beyond +-PI.
+        // Note that this can only occur if the wall has exactly one endpoint in the fov cone.
+        if (v_in_fov != u_in_fov && diff > PI)
+        {
+            if (theta_u < -FOV_RADS) theta_u += 2 * PI;
+            else if (theta_v < -FOV_RADS) theta_v += 2 * PI;
+            else if (theta_u > FOV_RADS) theta_u -= 2 * PI;
+            else if (theta_v > FOV_RADS) theta_v -= 2 * PI;
         }
         
         bool u_is_end = theta_u > theta_v;
@@ -427,15 +457,27 @@ void render_map(bool is_shooting) {
         curs = curs->next;
     }
 
-    printf("raycast during dll construction: %d\n", raycast_calls);
-
+    
     #ifdef RENDER_DEBUG
+        // Construct the left and right bounds of the FOV cone
+        segment cone_l = {player.pos, {0, 0}};
+        float bound_angle = player.angle - FOV_RADS_HALF;
+        cone_l.v.x = player.pos.x + DOV * cosf(bound_angle);
+        cone_l.v.y = player.pos.y + DOV * sinf(bound_angle);
+
+        segment cone_r = {player.pos, {0, 0}};
+        bound_angle = player.angle + FOV_RADS_HALF;
+        cone_r.v.x = player.pos.x + DOV * cosf(bound_angle);
+        cone_r.v.y = player.pos.y + DOV * sinf(bound_angle);
+        printf("raycast during dll construction: %d\n", raycast_calls);
         render_debug(root, cone_l, cone_r);
     #endif
     
     // Sort endpoints in clockwise order across the FOV cone
     root = merge_sort_dll(root);
+    dll_take_snapshot(root);
     dll* sweep_curs = root;
+
     segment* closest_wall = NULL;
 
     #ifdef DS_DEBUG
@@ -444,7 +486,7 @@ void render_map(bool is_shooting) {
 
     // Skips rendering on every x walls for performance
     for (int i = 0; i < SCREEN_WIDTH; i += RENDERER_COL_SKIP) {
-        float ray_angle = player.angle + (i * FOV_RADS / SCREEN_WIDTH) - (FOV_RADS / 2);
+        float ray_angle = player.angle + (i * FOV_RADS / SCREEN_WIDTH) - (FOV_RADS_HALF);
         
         ray.v.x = cosf(ray_angle);
         ray.v.y = sinf(ray_angle);
@@ -626,14 +668,14 @@ void render_map(bool is_shooting) {
         vec2 to_obj = sub(obj.pos, player.pos);
         float obj_angle = atan2f(cross(reference_vec, to_obj), dot(reference_vec, to_obj));
 
-        if (obj_angle < -FOV_RADS / 2 || obj_angle > FOV_RADS / 2) continue;
+        if (obj_angle < -FOV_RADS_HALF || obj_angle > FOV_RADS_HALF) continue;
         
         // Walk across lateral pixels affected by sprite, if any have depth more than object distance draw the object.
         float obj_dist = magnitude(to_obj);
         int scale_height = obj.s->scale_factor * obj.s->height / (obj_dist * TANF_HALF_FOV_RADS);
         int scale_width = obj.s->scale_factor * obj.s->width / (obj_dist * TANF_HALF_FOV_RADS);
 
-        int obj_screen_x = SCREEN_WIDTH * ((obj_angle + (FOV_RADS / 2)) / FOV_RADS);
+        int obj_screen_x = SCREEN_WIDTH * ((obj_angle + (FOV_RADS_HALF)) / FOV_RADS);
         int obj_screen_l = MAX(MIN(obj_screen_x - scale_width / 2, SCREEN_WIDTH - 1), 0);
         int obj_screen_r = MAX(MIN(obj_screen_x + scale_width / 2, SCREEN_WIDTH - 1), 0);
 
