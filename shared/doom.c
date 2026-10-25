@@ -188,7 +188,7 @@ segment* bsp_wallgen(segment* walls, int* num_walls, int l, int r, int t, int b,
         // Prevent walls being created in small cells
         if (r - MIN_ROOM_WIDTH <= l + MIN_ROOM_WIDTH || b - MIN_ROOM_WIDTH <= t + MIN_ROOM_WIDTH) return walls;
         // Prevent thin walls being created
-        if (r - l < MIN_WALL_WIDTH || b - t < MIN_WALL_WIDTH) return walls;
+        if (r - l - 2 * MIN_ROOM_WIDTH < MIN_WALL_WIDTH || b - t - 2 * MIN_ROOM_WIDTH < MIN_WALL_WIDTH) return walls;
 
         walls = (segment*) realloc(walls, sizeof(segment) * (*num_walls + 4));
         walls[(*num_walls)++] = (segment) {
@@ -349,24 +349,6 @@ void render_map(bool is_shooting) {
     vec2 reference_vec = {cosf(player.angle), sinf(player.angle)};
     for (int i = 0; i < num_walls; i++) {
         segment wall = walls[i];
-
-        // if (!relevant)
-        // {
-        //     // Check if either endpoint lies in fov cone. Skip if not
-        //     bool u_in_fov = point_lies_in_cone(cone_l, cone_r, wall.u);
-        //     bool v_in_fov = point_lies_in_cone(cone_l, cone_r, wall.v);
-        //     if (!u_in_fov && !v_in_fov) continue;
-
-        //     // Check for special case.
-        //     // When walls have an endpoint behind the player and on the opposite side of the reference vector,
-        //     // the incorrect endpoint may be calculated as the "start" and "end". We alleviate this issue by counting 
-        //     // the endpoint's angle relative to the ref vector beyond +-PI.
-        //     // Note that this can only occur if the wall has exactly one endpoint in the fov cone.
-        //     if (u_in_fov != v_in_fov) {
-        //         vec2 neg_reference_vec = sub((vec2){0,0}, reference_vec);
-        //         raycast(player.pos, neg_reference_vec, wall, &intersects_neg_ref_vec);
-        //     }
-        // }
         
         // Get angle of each endpoint relative to player's view direction (sort key for sweepline algorithm)
         vec2 point_vec = sub(wall.u, player.pos);
@@ -683,26 +665,26 @@ void draw_wall_from_depth_buf(depth_buf_info info, int x)
 {
     switch (info.tex) {
         case CHECK:
-            bool phase = info.wall2pt % 10 < 5;
-            if (info.wall2pt < 2 || info.wall2pt > info.wall_len - 2) {
-                vertical_line(x, info.length, 1, 2);
-                
-            } else {
-                check_line(x, info.length, phase);
+            if (info.wall2pt < 2 || info.wall2pt > info.wall_len - 2)
+            {
+                vertical_line(x, info.length, 1, 1);
             }
+            else
+            {
+                vertical_line(x, info.length, 0, 1);
+            }
+            // bool phase = info.wall2pt % 10 < 5;
+            // if (info.wall2pt < 2 || info.wall2pt > info.wall_len - 2) {
+            //     vertical_line(x, info.length, 1, 2);
+                
+            // } else {
+            //     check_line(x, info.length, phase);
+            // }
             
             break;
 
         // case LINES:
-        //     info.phase = (wall2pt + 1) % 20 < 3;
-        //     //vertical_line(i, info.length, 1, MAX(1, info.length - 1));
-
-        //     // if (info.phase) {
-        //     //     vertical_line(i, info.length, 1, 1);
-        //     // } else if (wall2pt < 2 || wall2pt > wall_len - 2) {
-        //     //     vertical_line(i, info.length, 1, 1);
-        //     // }
-            
+        //     vertical_line(x, info.length, 1, 1);
         //     break;
 
         case DOOR:
@@ -746,6 +728,11 @@ void vertical_line(int x, int half_length, bool color, int skip) {
         if (WALL_OFFSET + i < UI_HEIGHT) {
             oled_write_pixel(x, WALL_OFFSET + i, color);
         }
+    }
+
+    oled_write_pixel(x, WALL_OFFSET - half_length, 1);
+    if (WALL_OFFSET + half_length < UI_HEIGHT) {
+        oled_write_pixel(x, WALL_OFFSET + half_length, 1);
     }
 }
 

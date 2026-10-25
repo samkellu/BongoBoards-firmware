@@ -60,8 +60,8 @@
 // MAP GEN
 #define WALL_OFFSET           27
 #define MIN_ROOM_WIDTH        20
-#define MIN_WALL_WIDTH        10
-#define MAP_GEN_REC_DEPTH     7
+#define MIN_WALL_WIDTH        20
+#define MAP_GEN_REC_DEPTH     6
 #define MAP_WIDTH             500
 #define MAP_HEIGHT            500
 #define DOOR_WIDTH            20
